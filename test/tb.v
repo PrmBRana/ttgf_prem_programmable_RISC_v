@@ -22,13 +22,59 @@ module tb ();
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
+
+  // --------------------------------------------------
+   // UART (ONLY ONE)
+   // --------------------------------------------------
+   reg  rx;
+   wire tx;
+   // --------------------------------------------------
+   // SPI
+   // --------------------------------------------------
+   reg  spi2_miso;
+   wire spi2_mosi;
+   wire spi2_sclk;
+   wire spi2_cs_n;
+
+
+  assign ui_in[3] = rx;   // UART RX
+  assign uio_in[7] = spi2_miso;
+  // --------------------------------------------------
+    // Output mapping
+    // --------------------------------------------------
+    assign tx = uo_out[0];   // UART TX
+
+    assign spi2_mosi = uio_out[2];
+    assign spi2_sclk = uio_out[3];
+    assign spi2_cs_n = uio_out[4];
+
+    // --------------------------------------------------
+    // Clock (50 MHz)
+    // --------------------------------------------------
+    always #10 clk = ~clk;
+
+    // --------------------------------------------------
+    // Initial
+    // --------------------------------------------------
+    initial begin
+        clk = 0;
+        rst_n = 0;
+        ena = 1;
+
+        rx = 1'b1;          // UART idle (IMPORTANT)
+        spi2_miso = 1'b1;
+
+        #100;
+        rst_n = 1;
+    end
+
 `ifdef GL_TEST
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
 `endif
 
   // Replace tt_um_example with your module name:
-  tt_um_example user_project (
+  tt_um_prem_pipeline_test dut (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
