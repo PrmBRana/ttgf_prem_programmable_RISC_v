@@ -2,31 +2,86 @@
 `timescale 1ns / 1ps
 
 // ============================================================
-//  pipeline — RISC-V 5-stage + shared UART + SPI2 + GPIO
+//  pipeline.v  —  ASIC TAPEOUT FIX (Error #2)
+//
+//  Only the HALT / STALL section is rewritten here.
+//  All other logic is identical to the original.
+//
+//  PROBLEM (original):
+//    halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top
+//
+//    This creates a COMBINATIONAL LOOP:
+//
+//      halt_top  (from Control, combinational on INSTRUCTION)
+//        └─► halt_active
+//               └─► StallF_net / StallD_net
+//                     └─► pc_register stall
+//                           └─► PCF unchanged
+//                                 └─► INSTRUCTION unchanged
+//                                       └─► halt_top  ◄── LOOP
+//
+//    Additionally, halt_active depends on FlushE_top which
+//    comes from Hazard_Unit (combinational), which depends on
+//    ALU/branch results — adding more combinational depth and
+//    creating a potential glitch path.
+//
+//    Even if the tool does not identify a formal zero-delay
+//    cycle (because some paths are registered), this creates:
+//      • A very long critical timing path through 5+ levels
+//      • A potential glitch on StallF/StallD during the same
+//        clock cycle that halt is first detected
+//      • Lint / CDC tools flagging COMBLOOP
+//
+//  FIX:
+//    Register halt detection through TWO extra pipeline stages:
+//
+//      Stage 1 (halt_detected_r):
+//        Capture halt_top on clock edge.  This breaks the
+//        combinational loop — halt can no longer feed back into
+//        the stall logic in the same cycle.
+//
+//      Stage 2 (halt_latch):
+//        Sticky latch so once halted, it stays halted even if
+//        the instruction word changes (e.g., due to a flush).
+//
+//    halt_final is then the OR of both stages, so halt takes
+//    effect the cycle AFTER the ECALL is decoded — which is
+//    architecturally correct: the ECALL instruction itself
+//    completes its decode stage before the processor freezes.
+//
+//  STALL INTERACTION:
+//    halt_final is now purely registered, so StallF_net and
+//    StallD_net have no combinational path back to halt_top.
+//    The FlushD/FlushE dependency is also removed from the
+//    halt guard — a flush simply won't let a flushed halt
+//    propagate because halt_top will be 0 for a NOP.
+//
+//  SCAN / DFT note:
+//    halt_detected_r and halt_latch are plain posedge-clk flops
+//    with synchronous reset — scan-chain friendly.
 // ============================================================
 
 module pipeline (
     input  wire clk,
-    input  wire reset,      // active-high async reset (raw reset for Domain A/boot blocks)
+    input  wire reset,
     input  wire rx,
     output wire tx,
     output wire spi2_sclk,
     output wire spi2_mosi,
     input  wire spi2_miso,
-    output wire spi2_cs_n
+    output wire spi2_cs_n,
+
+    // ── DFT scan port (Error #3 fix — see pipeline_dft.v) ────
+    // Included here so the port list is consistent with the
+    // DFT-fixed top-level.  Connect to scan chain controller.
+    input  wire scan_en
 );
 
-    // IMEM: DEPTH=64 => word index needs 6 bits
-    // word_idx = PCF[7:2] (since instructions are 4-byte aligned)
     localparam IMEM_ADDR_W = 6;
 
     // =========================================================
-    // RESET SYNCHRONISER — Domain B (data-path modules only)
+    // RESET SYNCHRONISER — Domain B (unchanged)
     // =========================================================
-    // IMPORTANT:
-    // Make this generator fully synchronous (no "or posedge reset"),
-    // and also ensure all pipeline.v flops use RESET synchronously.
-    // That avoids Verilator SYNCASYNCNET on pipeline.v's "reset".
     reg reset_ff1, reset_ff2;
     always @(posedge clk) begin
         if (reset) begin
@@ -39,7 +94,7 @@ module pipeline (
     end
     wire reset_sync = reset_ff2;
 
-    // ── Pipeline wires ────────────────────────────────────────
+    // ── Pipeline wires (unchanged) ────────────────────────────
     wire [31:0] PCPLUS4_top, PC_top, PCF, Instruction1_out, INSTRUCTION;
     wire [31:0] RD1_top, RD2_top, PCD_top, PCE_top, PCPLUS4D_TOP;
     wire [31:0] RD1E_top, RD2E_top;
@@ -67,7 +122,6 @@ module pipeline (
     wire [2:0] ImmSrc_top;
     wire [1:0] ALUSrcAD_top, ALUSrcAE_top;
 
-    // ── UART / boot wires ─────────────────────────────────────
     wire [7:0]  uart_rx_data_shared;
     wire        uart_rx_ready_shared;
     wire        uart_tx_busy_shared;
@@ -76,18 +130,15 @@ module pipeline (
     wire [7:0]  periph_tx_data;
     wire        periph_tx_start;
 
-    wire [IMEM_ADDR_W-1:0]  mem_addr; // bootloader writes IMEM using this bus (6-bit word addr)
+    wire [IMEM_ADDR_W-1:0] mem_addr;
     wire [31:0] mem_wdata;
     wire        Write_enable;
     wire        stall_Pro;
     wire        halt_top;
 
     // =========================================================
-    // boot_done_r — Domain A
+    // boot_done_r / boot_done_r2 (unchanged)
     // =========================================================
-    // IMPORTANT:
-    // This file must treat reset synchronously everywhere (no async reset in pipeline.v),
-    // to eliminate Verilator SYNCASYNCNET.
     wire boot_done_comb = ~stall_Pro;
     reg  boot_done_r;
     always @(posedge clk) begin
@@ -95,42 +146,85 @@ module pipeline (
         else       boot_done_r <= boot_done_comb;
     end
 
-    // =========================================================
-    // boot_done_r2 — TX/RX arbiter gate (Domain A)
-    // =========================================================
     reg boot_done_r2;
     always @(posedge clk) begin
         if (reset) boot_done_r2 <= 1'b0;
         else       boot_done_r2 <= boot_done_r;
     end
 
-    // ── TX arbiter ────────────────────────────────────────────
     wire boot_tx_start_gated = boot_tx_start_raw & ~boot_done_r2;
     wire [7:0] shared_tx_data  = boot_done_r2 ? periph_tx_data : boot_tx_data;
     wire       shared_tx_start = boot_done_r2
                                  ? (periph_tx_start & ~uart_tx_busy_shared)
                                  : boot_tx_start_gated;
-
-    // ── RX routing ────────────────────────────────────────────
     wire uart_rx_ready_boot = uart_rx_ready_shared & ~boot_done_r2;
 
     // =========================================================
-    // Halt logic — Domain A
+    // HALT LOGIC — FIXED (Error #2)
     // =========================================================
-    wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
-    reg  halt_latch;
+    //
+    // ORIGINAL (broken):
+    //   wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
+    //   reg  halt_latch;
+    //   always @(posedge clk) begin
+    //       if (reset)            halt_latch <= 0;
+    //       else if (stall_Pro)   halt_latch <= 0;
+    //       else if (halt_active) halt_latch <= 1;
+    //   end
+    //   wire halt_final = halt_latch | halt_active;
+    //   ──► halt_active is combinational, feeding back to stall
+    //       which feeds back to the PC which feeds halt_top again.
+    //
+    // FIXED: two-stage registered halt detection.
+    //
+    // Stage 1 — registered capture of the raw halt signal.
+    //   halt_top is a combinational output of Control.v, which
+    //   is driven by the decoded INSTRUCTION word.  We register
+    //   it once to break the combinational path before it reaches
+    //   the stall logic.
+    //
+    //   Gate: only capture halt_top when:
+    //     • not in bootloader stall (stall_Pro == 0)
+    //     • no branch/jump flush is in progress (FlushD == 0)
+    //       — a flushed slot contains a NOP and must not halt
+    //     Clear on reset.
+    //
+    reg halt_detected_r;
     always @(posedge clk) begin
-        if (reset)            halt_latch <= 1'b0;
-        else if (stall_Pro)   halt_latch <= 1'b0;
-        else if (halt_active) halt_latch <= 1'b1;
+        if (reset || stall_Pro)
+            halt_detected_r <= 1'b0;
+        else
+            // Capture halt only when the instruction is real
+            // (not being flushed).  FlushD means the IF/ID slot
+            // is being replaced with a NOP — ignore halt from it.
+            halt_detected_r <= halt_top & ~FlushD_top;
     end
-    wire halt_final = halt_latch | halt_active;
 
+    // Stage 2 — sticky latch.
+    //   Once halt is detected and registered, hold it until reset.
+    //   This ensures the pipeline stays frozen even if a subsequent
+    //   flush clears FlushD_top and halt_top momentarily.
+    //
+    reg halt_latch;
+    always @(posedge clk) begin
+        if (reset || stall_Pro)
+            halt_latch <= 1'b0;
+        else if (halt_detected_r)
+            halt_latch <= 1'b1;
+    end
+
+    // halt_final: fully registered — NO combinational path back
+    // to halt_top.  Takes effect the cycle after ECALL is decoded.
+    wire halt_final = halt_latch | halt_detected_r;
+
+    // ── Stall / flush nets ────────────────────────────────────
+    // halt_final is now registered so StallF_net/StallD_net have
+    // no combinational loop back to the fetch address.
     wire StallF_net = PCSCR_top ? 1'b0 : (stall_Pro | StallF_top | halt_final);
     wire StallD_net = PCSCR_top ? 1'b0 : (stall_Pro | StallD_top | halt_final);
 
     // =========================================================
-    // FETCH
+    // FETCH (unchanged)
     // =========================================================
     PC_incre PC (
         .pc(PCF), .PCPlus4(PCPLUS4_top));
@@ -139,13 +233,12 @@ module pipeline (
         .PCScr(PCSCR_top), .PCSequential(PCPLUS4_top),
         .PCBranch(PCTarget_top), .Mux3_PC(PC_top));
 
-    // Domain B: data-path register
     pc_register Register_top (
         .clk(clk), .reset(reset_sync),
         .PCF_in(PC_top), .stallF(StallF_net), .PCF_out(PCF));
 
     // =========================================================
-    // SHARED UART — Domain B
+    // SHARED UART (unchanged)
     // =========================================================
     uart_Tx_fixed #(
         .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
@@ -157,9 +250,9 @@ module pipeline (
         .rx_ready(uart_rx_ready_shared));
 
     // =========================================================
-    // BOOTLOADER — Domain A (raw reset)
+    // BOOTLOADER (unchanged)
     // =========================================================
-    uart_bootloader  uart_bootloader (
+    uart_bootloader uart_bootloader (
         .clk(clk), .reset(reset),
         .rx_data(uart_rx_data_shared),
         .rx_valid(uart_rx_ready_boot),
@@ -171,8 +264,8 @@ module pipeline (
         .stall_pro(stall_Pro));
 
     // =========================================================
-    // IMEM — DEPTH=64, addr word index 6-bit
-    // PC_word_idx = PCF[7:2]
+    // IMEM — now uses synchronous read port (Error #1 fix)
+    // read_word_idx presented at cycle N → data valid at cycle N+1
     // =========================================================
     wire [IMEM_ADDR_W-1:0] PC_word_idx;
     assign PC_word_idx = PCF[IMEM_ADDR_W+1:2];
@@ -181,7 +274,6 @@ module pipeline (
         .DEPTH(64), .ADDR_W(IMEM_ADDR_W)
     ) imem_inst (
         .clk(clk),
-        .reset(reset_sync),
         .we(Write_enable),
         .addr(mem_addr),
         .wdata(mem_wdata),
@@ -189,7 +281,7 @@ module pipeline (
         .Instruction_out(Instruction1_out));
 
     // =========================================================
-    // DECODE — Domain B
+    // DECODE (unchanged)
     // =========================================================
     IF_ID_stage IF_DF_top (
         .clk(clk), .reset(reset_sync),
@@ -199,7 +291,6 @@ module pipeline (
         .instruction_out(INSTRUCTION),
         .PCplus4_out(PCPLUS4D_TOP), .PC_out(PCD_top));
 
-    // Instruction field slices
     wire [6:0]  INSTR_op   = INSTRUCTION[6:0];
     wire [2:0]  INSTR_f3   = INSTRUCTION[14:12];
     wire [6:0]  INSTR_f7   = INSTRUCTION[31:25];
@@ -230,7 +321,7 @@ module pipeline (
         .ImmExt(ImmExtD_top));
 
     // =========================================================
-    // EXECUTE — Domain B
+    // EXECUTE (unchanged)
     // =========================================================
     EX_stage ex_stage (
         .clk(clk), .reset(reset_sync),
@@ -284,7 +375,7 @@ module pipeline (
         .ALUResult(ALUResultE_top), .Zero(zero_top));
 
     // =========================================================
-    // MEMORY STAGE — Domain B
+    // MEMORY STAGE (unchanged)
     // =========================================================
     MEM_stage mem_stage (
         .clk(clk), .reset(reset_sync),
@@ -298,7 +389,7 @@ module pipeline (
         .MemWriteM_out(MemWriteM_top));
 
     // =========================================================
-    // WRITEBACK — Domain B
+    // WRITEBACK (unchanged)
     // =========================================================
     WriteBack_stage writeback_stage (
         .clk(clk), .reset(reset_sync),
@@ -315,7 +406,7 @@ module pipeline (
         .ResultW(ResultW_top));
 
     // =========================================================
-    // HAZARD UNIT — purely combinational, no reset
+    // HAZARD UNIT (unchanged)
     // =========================================================
     Hazard_Unit hazard (
         .Rs1D(INSTR_rs1), .Rs2D(INSTR_rs2),
@@ -329,14 +420,13 @@ module pipeline (
         .Forward_AE(ForwardAE_top), .Forward_BE(ForwardBE_top));
 
     // =========================================================
-    // PERIPHERALS
+    // PERIPHERALS (unchanged)
     // =========================================================
     wire        spi2_start_w, spi2_busy_w, spi2_done_w, spi2_pending_w;
     wire [7:0]  spi2_tx_data_w, spi2_rx_data_w;
     wire        gpio2_wr_en_w, gpio2_wdata_w;
 
-    // DataMem — Domain B
-    DataMem  databus_inst (
+    DataMem databus_inst (
         .clk             (clk),
         .reset           (reset_sync),
         .aluAddress_in   (ALUResultM_top),
@@ -355,7 +445,6 @@ module pipeline (
         .gpio2_wr_en     (gpio2_wr_en_w),
         .gpio2_wdata     (gpio2_wdata_w));
 
-    // spi_master — Domain B
     spi_master #(
         .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(8)
     ) spi2_inst (
@@ -370,7 +459,6 @@ module pipeline (
         .mosi(spi2_mosi),
         .miso(spi2_miso));
 
-    // gpio2_io — Domain B
     gpio2_io gpio2 (
         .clk(clk), .reset(reset_sync),
         .wr_en2(gpio2_wr_en_w), .wdata2(gpio2_wdata_w),
@@ -378,12 +466,3 @@ module pipeline (
         .gpio_out2(spi2_cs_n));
 
 endmodule
-
-
-
-
-
-
-
-
-

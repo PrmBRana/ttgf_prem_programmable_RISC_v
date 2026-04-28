@@ -2,13 +2,11 @@
 `timescale 1ns/1ps
 
 module instruction_mem #(
-    parameter integer DEPTH  = 50,
+    parameter integer DEPTH  = 64,
     parameter integer ADDR_W = 6
 )(
     input  wire              clk,
-    input  wire              reset,
     input  wire              we,
-
     input  wire [ADDR_W-1:0] addr,
     input  wire [31:0]       wdata,
 
@@ -16,32 +14,25 @@ module instruction_mem #(
     output wire [31:0]       Instruction_out
 );
 
-    localparam [31:0] NOP = 32'h0000_0013;
-
     reg [31:0] mem [0:DEPTH-1];
 
-`ifndef SYNTHESIS
     integer i;
-`endif
 
-    // ── Write + simulation reset ──────────────────────────────
-    always @(posedge clk) begin
-`ifndef SYNTHESIS
-        if (reset) begin
-            for (i = 0; i < DEPTH; i = i + 1)
-                mem[i] <= NOP;
-        end else
-`endif
-        begin
-            if (we)
-                mem[addr] <= wdata;
-        end
+    initial begin
+        for (i = 0; i < DEPTH; i = i + 1)
+            mem[i] = 32'h00000013;
     end
 
-    // ── Async read (required by your pipeline) ────────────────
+    always @(posedge clk) begin
+        if (we)
+            mem[addr] <= wdata;
+    end
+
+    // combinational read (fixes simulation issue)
     assign Instruction_out = mem[read_word_idx];
 
 endmodule
+
 
 
 
