@@ -69,12 +69,7 @@ module pipeline (
     output wire spi2_sclk,
     output wire spi2_mosi,
     input  wire spi2_miso,
-    output wire spi2_cs_n,
-
-    // ── DFT scan port (Error #3 fix — see pipeline_dft.v) ────
-    // Included here so the port list is consistent with the
-    // DFT-fixed top-level.  Connect to scan chain controller.
-    input  wire scan_en
+    output wire spi2_cs_n
 );
 
     localparam IMEM_ADDR_W = 6;
@@ -466,3 +461,6 @@ module pipeline (
         .gpio_out2(spi2_cs_n));
 
 endmodule
+
+
+
