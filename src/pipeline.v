@@ -1,69 +1,5 @@
 `default_nettype none
-`timescale 1ns / 1ps
-
-// ============================================================
-//  pipeline.v  —  ASIC TAPEOUT FIX (Fanout + Antenna)
-//
-//  VIOLATIONS FIXED IN THIS VERSION:
-//
-//  1. MAX FANOUT (215 violations on clkbuf_leaf_* cells)
-//     ─────────────────────────────────────────────────────
-//     ROOT CAUSE: The original code had several wide-fanout
-//     combinational signals driving 10+ loads without buffering:
-//       • stall_Pro  → drives 5+ logic cones simultaneously
-//       • halt_final → drives StallF_net and StallD_net which
-//                      each fan out into wide logic trees
-//       • FlushD_top → directly used in halt_detected_r AND
-//                      passed to IF_ID_stage
-//       • PCSCR_top  → combinational, wide fan-out to stall nets
-//
-//     FIX: Insert explicit registered/buffered intermediate nets
-//     for all signals that drive >4 loads.  The synthesis tool
-//     and resizer can handle small fanout, but registered staging
-//     helps the CTS/resizer not fight the clock tree for resources.
-//
-//     Additionally, the config now uses:
-//       • SYNTH_MAX_FANOUT: 8  (tighter budget)
-//       • CTS_SINK_CLUSTERING_SIZE: 16  (fewer FFs per leaf buf)
-//       • CTS_CLK_BUFFER_LIST: includes clkbuf_4/8/16  (allows
-//         smaller leaves for high-fanout leaf nodes)
-//       • GLB_RESIZER_MAX_FANOUT_FIX_PASSES: 10
-//
-//  2. ANTENNA VIOLATIONS (56 pin / 53 net violations)
-//     ─────────────────────────────────────────────────────
-//     ROOT CAUSE: Long combinational paths (especially the
-//     stall/halt/pcscr chains crossing the full die width)
-//     create long unbroken metal runs during routing.  These
-//     accumulate plasma-charge damage on gate oxides.
-//
-//     FIX 1 (RTL): Break long combinational chains at natural
-//     pipeline boundaries by registering intermediate values
-//     (stall_pro_r, pcscr_r).  Registered signals are driven
-//     from FF outputs — short local connections — so the router
-//     can place the FF near the loads and avoid long metal runs.
-//
-//     FIX 2 (Config): DIODE_INSERTION_STRATEGY 4 enables
-//     OpenLane's full antenna-diode insertion flow (filler-based
-//     and endcap-based) plus ANTENNA_CHECK_MARGIN 2 adds 2×
-//     safety margin.  GRT_MAX_DIODE_INS_ITERS 15 gives the
-//     router more passes to resolve remaining violations.
-//
-//  TIMING NOTE:
-//     Registering stall_Pro and PCSCR_top adds ONE cycle of
-//     latency to stall/branch taken response.
-//
-//     • stall_Pro:  bootloader stall is already many cycles long
-//       (UART byte-by-byte), so one extra cycle is invisible.
-//     • PCSCR_top (branch/jump):  the pipeline already inserts
-//       two flush bubbles (FlushD + FlushE) for taken branches.
-//       Adding one registered-PCSCR stage means the flush now
-//       propagates correctly one cycle later — the branch penalty
-//       increases from 2 to 3 cycles.  This is architecturally
-//       safe but you must ensure your software does not assume
-//       a 2-cycle branch shadow.  If 2-cycle is required, remove
-//       the pcscr_r stage and accept the antenna risk (mitigated
-//       by the diode insertion in the config).
-// ============================================================
+`timescale 1ns/1ps
 
 module pipeline (
     input  wire clk,
@@ -79,7 +15,7 @@ module pipeline (
     localparam IMEM_ADDR_W = 6;
 
     // =========================================================
-    // RESET SYNCHRONISER (unchanged)
+    // RESET SYNCHRONISER
     // =========================================================
     reg reset_ff1, reset_ff2;
     always @(posedge clk) begin
@@ -93,7 +29,7 @@ module pipeline (
     end
     wire reset_sync = reset_ff2;
 
-    // ── Pipeline wires ─────────────────────────────────────────
+    // ── Pipeline wires ────────────────────────────────────────
     wire [31:0] PCPLUS4_top, PC_top, PCF, Instruction1_out, INSTRUCTION;
     wire [31:0] RD1_top, RD2_top, PCD_top, PCE_top, PCPLUS4D_TOP;
     wire [31:0] RD1E_top, RD2E_top;
@@ -136,28 +72,18 @@ module pipeline (
     wire        halt_top;
 
     // =========================================================
-    // FANOUT FIX: Register stall_Pro before it fans out.
-    //
-    // stall_Pro (from uart_bootloader) is a combinational signal
-    // that drives: boot_done_r logic, StallF_net, StallD_net,
-    // halt_detected_r clear, halt_latch clear — 5+ cones.
-    //
-    // Registering it once (stall_pro_r) means all downstream
-    // logic sees a flip-flop output that the placer puts near
-    // the loads, shortening metal and reducing fanout stress.
-    //
-    // boot_done_r already acts as a registered version for the
-    // UART gating — we reuse that path and add stall_pro_r for
-    // the hazard/halt cones.
+    // stall_Pro registered — fanout reduction only
+    // Used by halt logic only. boot_done uses stall_Pro directly
+    // (same as doc 18) to preserve boot timing.
     // =========================================================
     reg stall_pro_r;
     always @(posedge clk) begin
-        if (reset) stall_pro_r <= 1'b1;   // safe: stall during reset
+        if (reset) stall_pro_r <= 1'b1;
         else       stall_pro_r <= stall_Pro;
     end
 
     // =========================================================
-    // boot_done_r / boot_done_r2 (unchanged functional intent)
+    // boot_done_r / boot_done_r2 — identical to doc 18
     // =========================================================
     wire boot_done_comb = ~stall_Pro;
     reg  boot_done_r;
@@ -180,11 +106,11 @@ module pipeline (
     wire uart_rx_ready_boot = uart_rx_ready_shared & ~boot_done_r2;
 
     // =========================================================
-    // HALT LOGIC — two-stage registered (Error #2 fix, unchanged)
+    // HALT LOGIC — two-stage registered (doc 18, uses stall_pro_r)
     // =========================================================
     reg halt_detected_r;
     always @(posedge clk) begin
-        if (reset || stall_pro_r)           // use registered stall
+        if (reset || stall_pro_r)
             halt_detected_r <= 1'b0;
         else
             halt_detected_r <= halt_top & ~FlushD_top;
@@ -192,7 +118,7 @@ module pipeline (
 
     reg halt_latch;
     always @(posedge clk) begin
-        if (reset || stall_pro_r)           // use registered stall
+        if (reset || stall_pro_r)
             halt_latch <= 1'b0;
         else if (halt_detected_r)
             halt_latch <= 1'b1;
@@ -201,19 +127,12 @@ module pipeline (
     wire halt_final = halt_latch | halt_detected_r;
 
     // =========================================================
-    // FANOUT + ANTENNA FIX: Register PCSCR before stall nets.
-    //
-    // PCSCR_top is combinational (zero_top & BranchE_top | JumpE_top).
-    // It fans into both StallF_net and StallD_net and their
-    // associated override logic.  Routing this combinationally
-    // across the die creates long metal (antenna) and high fanout.
-    //
-    // pcscr_r: registered copy used by the stall nets below.
-    // PCSCR_top: still used by the PC-select MUX (combinational,
-    //   local, one load) — timing-critical, must stay fast.
-    //
-    // Trade-off: stall/flush asserts one cycle after branch.
-    // Pipeline effect: 3-cycle branch penalty instead of 2.
+    // pcscr_r — registered copy for stall nets ONLY
+    // PCSCR_top stays combinational for:
+    //   1. PCSelect_MUX  (branch target this cycle)
+    //   2. Hazard_Unit   (flush generation — must stay fast)
+    // pcscr_r used ONLY for StallF_net / StallD_net to cut
+    // antenna on those long nets. Does NOT go to Hazard_Unit.
     // =========================================================
     reg pcscr_r;
     always @(posedge clk) begin
@@ -221,32 +140,29 @@ module pipeline (
         else       pcscr_r <= PCSCR_top;
     end
 
-    // ── Stall / flush nets ──────────────────────────────────────
-    // Use pcscr_r (registered) to avoid long combinational paths
-    // that cause antenna violations on StallF/StallD nets.
-    // halt_final is already fully registered — safe to use directly.
-    // stall_pro_r is registered — safe to use directly.
+    // StallF/StallD use pcscr_r (antenna fix)
+    // Hazard_Unit generates FlushD/FlushE from PCSCR_top (correct)
     wire StallF_net = pcscr_r ? 1'b0 : (stall_pro_r | StallF_top | halt_final);
     wire StallD_net = pcscr_r ? 1'b0 : (stall_pro_r | StallD_top | halt_final);
 
     // =========================================================
-    // FETCH (unchanged)
+    // FETCH
     // =========================================================
     PC_incre PC (
         .pc(PCF), .PCPlus4(PCPLUS4_top));
 
-    // PCSelect_MUX: still uses PCSCR_top (combinational) for
-    // correct branch target selection this cycle.
     PCSelect_MUX PCSelect_top (
-        .PCScr(PCSCR_top), .PCSequential(PCPLUS4_top),
-        .PCBranch(PCTarget_top), .Mux3_PC(PC_top));
+        .PCScr(PCSCR_top),
+        .PCSequential(PCPLUS4_top),
+        .PCBranch(PCTarget_top),
+        .Mux3_PC(PC_top));
 
     pc_register Register_top (
         .clk(clk), .reset(reset_sync),
         .PCF_in(PC_top), .stallF(StallF_net), .PCF_out(PCF));
 
     // =========================================================
-    // SHARED UART (unchanged)
+    // SHARED UART — OVERSAMPLE=16 (matches doc 18, passes sim)
     // =========================================================
     uart_Tx_fixed #(
         .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
@@ -258,7 +174,7 @@ module pipeline (
         .rx_ready(uart_rx_ready_shared));
 
     // =========================================================
-    // BOOTLOADER (unchanged)
+    // BOOTLOADER
     // =========================================================
     uart_bootloader uart_bootloader (
         .clk(clk), .reset(reset),
@@ -272,7 +188,8 @@ module pipeline (
         .stall_pro(stall_Pro));
 
     // =========================================================
-    // IMEM (Error #1 fix — synchronous read, unchanged)
+    // IMEM — combinational read (simulation correct)
+    // Antenna handled by OpenLane config diode insertion
     // =========================================================
     wire [IMEM_ADDR_W-1:0] PC_word_idx;
     assign PC_word_idx = PCF[IMEM_ADDR_W+1:2];
@@ -288,7 +205,7 @@ module pipeline (
         .Instruction_out(Instruction1_out));
 
     // =========================================================
-    // DECODE (unchanged)
+    // DECODE
     // =========================================================
     IF_ID_stage IF_DF_top (
         .clk(clk), .reset(reset_sync),
@@ -328,7 +245,7 @@ module pipeline (
         .ImmExt(ImmExtD_top));
 
     // =========================================================
-    // EXECUTE (unchanged)
+    // EXECUTE
     // =========================================================
     EX_stage ex_stage (
         .clk(clk), .reset(reset_sync),
@@ -374,7 +291,6 @@ module pipeline (
         ? ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE)
         :  (base_addr_w + ImmExtE_top);
 
-    // PCSCR_top: combinational for PC-select MUX (one local load, OK)
     assign PCSCR_top = (zero_top & BranchE_top) | JumpE_top;
 
     ALU alu (
@@ -383,7 +299,7 @@ module pipeline (
         .ALUResult(ALUResultE_top), .Zero(zero_top));
 
     // =========================================================
-    // MEMORY STAGE (unchanged)
+    // MEMORY STAGE
     // =========================================================
     MEM_stage mem_stage (
         .clk(clk), .reset(reset_sync),
@@ -397,7 +313,7 @@ module pipeline (
         .MemWriteM_out(MemWriteM_top));
 
     // =========================================================
-    // WRITEBACK (unchanged)
+    // WRITEBACK
     // =========================================================
     WriteBack_stage writeback_stage (
         .clk(clk), .reset(reset_sync),
@@ -414,7 +330,11 @@ module pipeline (
         .ResultW(ResultW_top));
 
     // =========================================================
-    // HAZARD UNIT (unchanged)
+    // HAZARD UNIT
+    // Receives PCSCR_top (combinational) — same as doc 18.
+    // This is correct: Hazard_Unit needs PCSCR_top this cycle
+    // to generate FlushD/FlushE for the same-cycle pipeline flush.
+    // pcscr_r is only for StallF/StallD nets (antenna fix above).
     // =========================================================
     Hazard_Unit hazard (
         .Rs1D(INSTR_rs1), .Rs2D(INSTR_rs2),
@@ -428,7 +348,7 @@ module pipeline (
         .Forward_AE(ForwardAE_top), .Forward_BE(ForwardBE_top));
 
     // =========================================================
-    // PERIPHERALS (unchanged)
+    // PERIPHERALS
     // =========================================================
     wire        spi2_start_w, spi2_busy_w, spi2_done_w, spi2_pending_w;
     wire [7:0]  spi2_tx_data_w, spi2_rx_data_w;
@@ -456,8 +376,7 @@ module pipeline (
     spi_master #(
         .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(8)
     ) spi2_inst (
-        .clk(clk),
-        .reset(reset_sync),
+        .clk(clk), .reset(reset_sync),
         .start(spi2_start_w),
         .tx_data(spi2_tx_data_w),
         .rx_data(spi2_rx_data_w),
@@ -474,6 +393,7 @@ module pipeline (
         .gpio_out2(spi2_cs_n));
 
 endmodule
+
 
 
 

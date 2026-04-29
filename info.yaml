@@ -22,7 +22,6 @@ project:
     - "clk.v" 
     - "Control_Unit.v"
     - "DataMem.v" 
-    - "EX_Mux.v"
     - "EX_stage.v" 
     - "Hazard_Unit.v"
     - "IF_ID_stage.v" 
