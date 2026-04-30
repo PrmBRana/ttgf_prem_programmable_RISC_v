@@ -122,16 +122,19 @@ module pipeline (
 
     wire uart_rx_ready_boot = uart_rx_ready_shared & ~boot_done_r;
 
-    // HALT LOGIC
+    // =========================================================
+    // HALT LOGIC (FIXED: combined into single always block)
+    // =========================================================
     reg halt_detected_r, halt_reg;
     always @(posedge clk or posedge reset_sync) begin
-        if (reset_sync | stall_pro_r) halt_detected_r <= 1'b0;
-        else halt_detected_r <= halt_top & ~FlushD_top;
-    end
-
-    always @(posedge clk or posedge reset_sync) begin
-        if (reset_sync | stall_pro_r) halt_reg <= 1'b0;
-        else if (halt_detected_r)     halt_reg <= 1'b1;
+        if (reset_sync | stall_pro_r) begin
+            halt_detected_r <= 1'b0;
+            halt_reg        <= 1'b0;
+        end else begin
+            halt_detected_r <= halt_top & ~FlushD_top;
+            if (halt_detected_r)
+                halt_reg <= 1'b1;
+        end
     end
 
     wire halt_final = halt_reg | halt_detected_r;
@@ -413,6 +416,7 @@ module pipeline (
     );
 
 endmodule
+
 
 
 
