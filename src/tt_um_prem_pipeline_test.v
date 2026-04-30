@@ -1,6 +1,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 
+/* verilator lint_off TIMESCALEMOD */
 module tt_um_prem_pipeline_test (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
@@ -11,70 +12,82 @@ module tt_um_prem_pipeline_test (
     input  wire       clk,
     input  wire       rst_n
 );
+/* verilator lint_on TIMESCALEMOD */
+
+    // Silence unused signal warnings
+    // ui_in[3] = uart1_rx, ui_in[4] = uart2_rx — rest unused
+    // uio_in[0] = spi1_miso, uio_in[7] = spi2_miso — rest unused
+    // ena — not used in this design
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire _unused = &{1'b0, ui_in[7:5], ui_in[2:0], uio_in[6:1], ena};
+    /* verilator lint_on  UNUSEDSIGNAL */
 
     // --------------------------------------------------
-    // Reset
+    // Internal wires
     // --------------------------------------------------
-    wire reset = ~rst_n;
+    wire reset;
+
+    wire uart1_tx, uart1_rx;
+    wire uart2_tx, uart2_rx;
+
+    wire spi1_clk, spi1_mosi, spi1_miso, spi1_cs_n;
+    wire spi2_clk, spi2_mosi, spi2_miso, spi2_cs_n;
+
+    assign reset = ~rst_n;
 
     // --------------------------------------------------
-    // UART (ONLY ONE)
+    // Input assignments
     // --------------------------------------------------
-    wire uart_rx = ui_in[3];
-    wire uart_tx;
+    assign uart1_rx  = ui_in[3];
+    assign uart2_rx  = ui_in[4];
+    assign spi1_miso = uio_in[0];
+    assign spi2_miso = uio_in[7];
 
     // --------------------------------------------------
-    // SPI signals
+    // Output assignments
     // --------------------------------------------------
-    wire spi2_mosi;
-    wire spi2_sclk;
-    wire spi2_cs_n;
-    wire spi2_miso = uio_in[7];
+    assign uo_out[0]   = uart1_tx;
+    assign uo_out[1]   = uart2_tx;
+    assign uo_out[7:2] = 6'b000000;
+
+    assign uio_out[0] = 1'b0;
+    assign uio_out[1] = spi1_mosi;
+    assign uio_out[2] = spi1_clk;
+    assign uio_out[3] = spi1_cs_n;
+    assign uio_out[4] = spi2_mosi;
+    assign uio_out[5] = spi2_clk;
+    assign uio_out[6] = spi2_cs_n;
+    assign uio_out[7] = 1'b0;
+
+    assign uio_oe[0] = 1'b0;
+    assign uio_oe[1] = 1'b1;
+    assign uio_oe[2] = 1'b1;
+    assign uio_oe[3] = 1'b1;
+    assign uio_oe[4] = 1'b1;
+    assign uio_oe[5] = 1'b1;
+    assign uio_oe[6] = 1'b1;
+    assign uio_oe[7] = 1'b0;
 
     // --------------------------------------------------
-    // Unused signals (cleaned)
-    // --------------------------------------------------
-    wire _unused = &{ui_in[7:4], ui_in[2:0], uio_in[6:0], ena};
-
-    // --------------------------------------------------
-    // Outputs (only UART1 now)
-    // --------------------------------------------------
-    assign uo_out = {
-        7'b0000000,
-        uart_tx
-    };
-
-    // --------------------------------------------------
-    // UIO mapping
-    // [0] UART TX
-    // [2] MOSI
-    // [3] SCLK
-    // [4] CS
-    // --------------------------------------------------
-    assign uio_out = {
-        3'b000,
-        spi2_cs_n,   // [4]
-        spi2_sclk,   // [3]
-        spi2_mosi,   // [2]
-        1'b0,        // [1] unused
-        uart_tx      // [0]
-    };
-
-    // enable only used pins: 0,2,3,4
-    assign uio_oe = 8'b00011101;
-
-    // --------------------------------------------------
-    // Pipeline core
+    // Instantiate the main pipeline module
     // --------------------------------------------------
     pipeline Top_inst (
         .clk(clk),
         .reset(reset),
 
-        .rx(uart_rx),
-        .tx(uart_tx),
+        .rx(uart1_rx),
+        .tx(uart1_tx),
+
+        .UART_tx(uart2_tx),
+        .UART_rx_line(uart2_rx),
+
+        .spi1_sclk(spi1_clk),
+        .spi1_mosi(spi1_mosi),
+        .spi1_miso(spi1_miso),
+        .spi1_cs_n(spi1_cs_n),
 
         .spi2_cs_n(spi2_cs_n),
-        .spi2_sclk(spi2_sclk),
+        .spi2_sclk(spi2_clk),
         .spi2_mosi(spi2_mosi),
         .spi2_miso(spi2_miso)
     );

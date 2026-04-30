@@ -38,6 +38,9 @@ project:
     - "uart_bootloader.v"
     - "spi.v"
     - "gpio.v"
+    - "fifo.v"
+    - "Ex_Mux.v"
+    - "uart0.v"
 
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.

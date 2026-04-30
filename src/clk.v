@@ -9,15 +9,10 @@ module pc_register (
     output reg  [31:0] PCF_out
 );
     always @(posedge clk) begin
-        if (reset)
-            PCF_out <= 32'd0;
-        else if (!stallF)
-            PCF_out <= PCF_in;
+        if (reset)       PCF_out <= 32'd0;
+        else if (!stallF) PCF_out <= PCF_in;
     end
 endmodule
-
-
-
 
 
 
