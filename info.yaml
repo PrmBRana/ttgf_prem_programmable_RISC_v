@@ -38,7 +38,6 @@ project:
     - "uart_bootloader.v"
     - "spi.v"
     - "gpio.v"
-    - "fifo.v"
     - "EX_Mux.v"
     - "uart0.v"
 

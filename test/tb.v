@@ -62,7 +62,6 @@ module tb();
     // uio_in[7] = spi2_miso
     always @(*) begin
         uio_in        = 8'b0;
-        uio_in[0]     = spi1_miso;
         uio_in[7]     = spi2_miso;
     end
 
@@ -71,9 +70,6 @@ module tb();
     assign UART_tx  = uo_out[1];   // peripheral  TX
 
     // ── uio_out → SPI outputs ──
-    assign spi1_mosi = uio_out[1];
-    assign spi1_sclk = uio_out[2];
-    assign spi1_cs_n = uio_out[3];
     assign spi2_mosi = uio_out[4];
     assign spi2_sclk = uio_out[5];
     assign spi2_cs_n = uio_out[6];
@@ -87,7 +83,6 @@ module tb();
         ena          = 1;
         rx           = 1'b1;   // UART idle high
         UART_rx_line = 1'b1;   // UART idle high
-        spi1_miso    = 1'b1;
         spi2_miso    = 1'b1;
     end
 

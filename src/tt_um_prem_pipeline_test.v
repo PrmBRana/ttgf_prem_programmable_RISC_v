@@ -30,7 +30,6 @@ module tt_um_prem_pipeline_test (
     wire uart1_tx, uart1_rx;
     wire uart2_tx, uart2_rx;
 
-    wire spi1_clk, spi1_mosi, spi1_miso, spi1_cs_n;
     wire spi2_clk, spi2_mosi, spi2_miso, spi2_cs_n;
 
     assign reset = ~rst_n;
@@ -40,7 +39,6 @@ module tt_um_prem_pipeline_test (
     // --------------------------------------------------
     assign uart1_rx  = ui_in[3];
     assign uart2_rx  = ui_in[4];
-    assign spi1_miso = uio_in[0];
     assign spi2_miso = uio_in[7];
 
     // --------------------------------------------------
@@ -51,9 +49,6 @@ module tt_um_prem_pipeline_test (
     assign uo_out[7:2] = 6'b000000;
 
     assign uio_out[0] = 1'b0;
-    assign uio_out[1] = spi1_mosi;
-    assign uio_out[2] = spi1_clk;
-    assign uio_out[3] = spi1_cs_n;
     assign uio_out[4] = spi2_mosi;
     assign uio_out[5] = spi2_clk;
     assign uio_out[6] = spi2_cs_n;
@@ -81,10 +76,6 @@ module tt_um_prem_pipeline_test (
         .UART_tx(uart2_tx),
         .UART_rx_line(uart2_rx),
 
-        .spi1_sclk(spi1_clk),
-        .spi1_mosi(spi1_mosi),
-        .spi1_miso(spi1_miso),
-        .spi1_cs_n(spi1_cs_n),
 
         .spi2_cs_n(spi2_cs_n),
         .spi2_sclk(spi2_clk),
