@@ -13,6 +13,6 @@ module pc_register (
         else if (!stallF) PCF_out <= PCF_in;
     end
 endmodule
-
+`default_nettype none
 
 

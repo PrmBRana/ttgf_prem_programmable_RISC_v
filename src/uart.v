@@ -210,3 +210,4 @@ module uart_Tx_fixed #(
 endmodule
 
 
+`default_nettype none

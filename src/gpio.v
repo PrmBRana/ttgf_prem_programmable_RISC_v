@@ -80,3 +80,4 @@ module gpio2_io (
 endmodule
 
 
+`default_nettype none
