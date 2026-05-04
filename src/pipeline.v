@@ -3,62 +3,45 @@
 
 // ============================================================
 //  pipeline — RISC-V 5-stage + UART + SPI2 + GPIO
-//  TARGET: GF180MCU / Tiny Tapeout
+//  TARGET: GF180MCU / Tiny Tapeout (PRODUCTION OPTIMIZED)
 //
-//  Physical Design Hardening — single-file, no stubs needed:
+//  ── WHY NO INLINE PDK CELLS IN RTL ──────────────────────────
 //
-//  All clock/reset/fanout buffers and antenna diodes are wrapped
-//  in `ifdef COCOTB_SIM ... `else ... `endif blocks:
+//  OpenLane elaborates RTL with Yosys/Verilator BEFORE linking
+//  the PDK standard-cell library. Instantiating:
 //
-//    `ifdef COCOTB_SIM
-//        assign Z = I;          // plain wire for Icarus / cocotb
-//    `else
-//        gf180mcu_fd_sc_mcu7t5v0__buf_4 u (...);  // real PDK cell
-//    `endif
+//    gf180mcu_fd_sc_mcu7t5v0__clkbuf_16 u (.I(a), .Z(b));
 //
-//  cocotb passes -DCOCOTB_SIM=1 automatically → sim path taken.
-//  Synthesis tools (Yosys / OpenLane / DC) never define COCOTB_SIM
-//  → PDK cell path taken, physical intent fully preserved.
+//  directly in RTL causes "%Error: Can't resolve module reference"
+//  at elaboration time.
 //
-//  Hardening applied:
-//  ✓ CLOCK TREE   clkbuf_16 root + clkbuf_4 per domain
-//  ✓ RESET TREE   buf_4 root + buf_4 per domain
-//  ✓ FANOUT BUFS  buf_4 on stall/flush/pcscr/halt/forward signals
-//                 buf_1 per bit on 32-bit ALUResultM and ResultW buses
-//  ✓ ANTENNA DIODES on every long-route output net
+//  CORRECT OPENLANE APPROACH:
+//  ✓ RTL uses plain `assign` wires everywhere
+//  ✓ OpenLane CTS inserts real clkbuf_16/clkbuf_4 cells automatically
+//  ✓ repair_design inserts buf_4/buf_1 for high-fanout nets
+//  ✓ Antenna violations fixed by OpenLane diode insertion pass
+//  ✓ config.json / SDC constrain buffer selection and fanout
+//
+//  Physical Design Control Points (in config.json / SDC):
+//  ─────────────────────────────────────────────────────────────
+//  "CLOCK_TREE_SYNTH": true
+//  "CTS_CLK_BUFFER_LIST": "gf180mcu_fd_sc_mcu7t5v0__clkbuf_16 gf180mcu_fd_sc_mcu7t5v0__clkbuf_4 gf180mcu_fd_sc_mcu7t5v0__clkbuf_2"
+//  "CTS_ROOT_BUFFER": "gf180mcu_fd_sc_mcu7t5v0__clkbuf_16"
+//  "MAX_FANOUT_CONSTRAINT": 4
+//  "SYNTH_STRATEGY": "DELAY 0"
+//  "DIODE_INSERTION_STRATEGY": 4       ← antenna diode insertion
+//  "ROUTING_ANTENNA_CHECKER": 1
+//
+//  Companion SDC (constraints.sdc):
+//    create_clock -period 20.0 -name clk [get_ports clk]
+//    set_clock_uncertainty -setup 0.5 [get_clocks clk]
+//    set_clock_uncertainty -hold  0.2 [get_clocks clk]
+//    set_max_fanout 4 [current_design]
+//    set_load 0.05 [all_outputs]
+//    set_driving_cell -lib_cell gf180mcu_fd_sc_mcu7t5v0__buf_4 \
+//        -pin Z [all_inputs]
+//    set_ideal_network [get_nets rst_root]
 // ============================================================
-
-// ── Helper macros to avoid repetition ────────────────────────
-//
-//  CLKBUF(out, in)   — clock buffer (clkbuf_16 or clkbuf_4)
-//  BUF4(out, in)     — signal spine buffer
-//  BUF1(out, in)     — signal leaf  buffer
-//  ANTENNA(net)      — antenna diode (no-op in sim)
-//
-// The macro selects simulation wire or PDK cell automatically.
-// `uname is a unique instance-name suffix supplied by the caller.
-// ─────────────────────────────────────────────────────────────
-
-`ifdef COCOTB_SIM
-  // ── Simulation: pure wire assignments ─────────────────────
-  `define CLKBUF16(uname, out, in)  assign out = in;
-  `define CLKBUF4(uname, out, in)   assign out = in;
-  `define BUF4(uname, out, in)      assign out = in;
-  `define BUF1(uname, out, in)      assign out = in;
-  `define ANTENNA(uname, net)       // no-op in simulation
-`else
-  // ── Synthesis / P&R: real GF180MCU standard cells ─────────
-  `define CLKBUF16(uname, out, in) \
-      gf180mcu_fd_sc_mcu7t5v0__clkbuf_16 uname (.I(in), .Z(out));
-  `define CLKBUF4(uname, out, in) \
-      gf180mcu_fd_sc_mcu7t5v0__clkbuf_4  uname (.I(in), .Z(out));
-  `define BUF4(uname, out, in) \
-      gf180mcu_fd_sc_mcu7t5v0__buf_4     uname (.I(in), .Z(out));
-  `define BUF1(uname, out, in) \
-      gf180mcu_fd_sc_mcu7t5v0__buf_1     uname (.I(in), .Z(out));
-  `define ANTENNA(uname, net) \
-      gf180mcu_fd_sc_mcu7t5v0__antenna   uname (.A(net));
-`endif
 
 module pipeline (
     input  wire clk,
@@ -79,45 +62,38 @@ module pipeline (
 );
 
 // =============================================================
-// SECTION 0 — CLOCK TREE
-//   clkbuf_16: root buffer (high drive strength, 1 output load)
-//   clkbuf_4 : spine buffer per domain (limits leaf fanout)
+// SECTION 0 — CLOCK DISTRIBUTION
+//
+//  Use plain assign. OpenLane CTS will:
+//  1. Identify clk as the clock root
+//  2. Insert clkbuf_16 at root, clkbuf_4/clkbuf_2 at leaves
+//  3. Balance skew across all clock domains automatically
+//
+//  DO NOT instantiate clkbuf_* here — it breaks elaboration
+//  and fights CTS optimization.
 // =============================================================
 
-    wire clk_root;
-    `CLKBUF16(u_clk_root,    clk_root,   clk)
-
-    wire clk_core;
-    `CLKBUF4(u_clk_core,     clk_core,    clk_root)
-
-    wire clk_imem;
-    `CLKBUF4(u_clk_imem,     clk_imem,    clk_root)
-
-    wire clk_regfile;
-    `CLKBUF4(u_clk_regfile,  clk_regfile, clk_root)
-
-    wire clk_periph;
-    `CLKBUF4(u_clk_periph,   clk_periph,  clk_root)
+    // All domains share the same root clock.
+    // CTS distributes and buffers as needed.
+    wire clk_core    = clk;
+    wire clk_imem    = clk;
+    wire clk_regfile = clk;
+    wire clk_periph  = clk;
 
 // =============================================================
-// SECTION 1 — RESET TREE
-//   buf_4 root → one buf_4 per clock domain
+// SECTION 1 — RESET DISTRIBUTION
+//
+//  Reset is not clock-managed, so Yosys will insert buf_4 cells
+//  via repair_design when fanout > MAX_FANOUT_CONSTRAINT.
+//  Using named intermediate wires helps P&R identify reset tree.
 // =============================================================
 
-    wire rst_root;
-    `BUF4(u_rst_root,    rst_root,   reset)
-
-    wire rst_core;
-    `BUF4(u_rst_core,    rst_core,   rst_root)
-
-    wire rst_mem;
-    `BUF4(u_rst_mem,     rst_mem,    rst_root)
-
-    wire rst_periph;
-    `BUF4(u_rst_periph,  rst_periph, rst_root)
-
-    wire rst_boot;
-    `BUF4(u_rst_boot,    rst_boot,   rst_root)
+    // One named wire per domain helps the router keep reset
+    // routes short. Synthesis inserts buffers via repair_design.
+    wire rst_core   = reset;
+    wire rst_mem    = reset;
+    wire rst_periph = reset;
+    wire rst_boot   = reset;
 
 // =============================================================
 // SECTION 2 — PIPELINE WIRES
@@ -163,7 +139,15 @@ module pipeline (
     wire        uart_rx_ready_boot, boot_tx_start;
 
 // =============================================================
-// SECTION 3 — HIGH-FANOUT CONTROL SIGNAL BUFFERS
+// SECTION 3 — HIGH-FANOUT CONTROL SIGNALS
+//
+//  Named intermediate wires for stall/flush/halt help the
+//  synthesizer track high-fanout nets and insert buffers via
+//  repair_design (controlled by MAX_FANOUT_CONSTRAINT = 4).
+//
+//  Do NOT manually insert buf_4 here — let repair_design do it.
+//  Manual insertion often creates duplicate drivers or conflicts
+//  with set_dont_touch annotations.
 // =============================================================
 
     // ── Halt latch ───────────────────────────────────────────
@@ -178,35 +162,27 @@ module pipeline (
     end
     /* verilator lint_on  SYNCASYNCNET */
 
-    wire halt_final_raw = halt_latch | halt_active;
-    wire halt_final;
-    `BUF4(u_buf_halt,   halt_final,  halt_final_raw)
+    // halt_final: named wire so repair_design can buffer it
+    wire halt_final = halt_latch | halt_active;
 
     // ── StallF ───────────────────────────────────────────────
-    wire StallF_raw = PCSCR_top ? 1'b0 : (stall_Pro | StallF_top | halt_final);
-    wire StallF_net;
-    `BUF4(u_buf_stallF, StallF_net,  StallF_raw)
+    // Named wire — high fanout (feeds PC register + IF/ID stage)
+    wire StallF_net = PCSCR_top ? 1'b0 : (stall_Pro | StallF_top | halt_final);
 
     // ── StallD ───────────────────────────────────────────────
-    wire StallD_raw = PCSCR_top ? 1'b0 : (stall_Pro | StallD_top | halt_final);
-    wire StallD_net;
-    `BUF4(u_buf_stallD, StallD_net,  StallD_raw)
+    wire StallD_net = PCSCR_top ? 1'b0 : (stall_Pro | StallD_top | halt_final);
 
     // ── FlushD / FlushE ───────────────────────────────────────
-    wire FlushD_buf, FlushE_buf;
-    `BUF4(u_buf_flushD, FlushD_buf,  FlushD_top)
-    `BUF4(u_buf_flushE, FlushE_buf,  FlushE_top)
+    // Pass through directly; repair_design inserts bufs if needed
+    wire FlushD_buf = FlushD_top;
+    wire FlushE_buf = FlushE_top;
 
     // ── PCSCR ─────────────────────────────────────────────────
-    wire PCSCR_buf;
-    `BUF4(u_buf_pcscr,  PCSCR_buf,   PCSCR_top)
+    wire PCSCR_buf  = PCSCR_top;
 
-    // ── ForwardAE[1:0] / ForwardBE[1:0] ──────────────────────
-    wire [1:0] ForwardAE_buf, ForwardBE_buf;
-    `BUF1(u_fwdA0, ForwardAE_buf[0], ForwardAE_top[0])
-    `BUF1(u_fwdA1, ForwardAE_buf[1], ForwardAE_top[1])
-    `BUF1(u_fwdB0, ForwardBE_buf[0], ForwardBE_top[0])
-    `BUF1(u_fwdB1, ForwardBE_buf[1], ForwardBE_top[1])
+    // ── ForwardAE / ForwardBE ──────────────────────────────────
+    wire [1:0] ForwardAE_buf = ForwardAE_top;
+    wire [1:0] ForwardBE_buf = ForwardBE_top;
 
 // =============================================================
 // SECTION 4 — FETCH
@@ -238,8 +214,6 @@ module pipeline (
         .tx(tx),                  .rx(rx),
         .rx_Data(uart_rx_data_boot),
         .rx_ready(uart_rx_ready_boot));
-
-    `ANTENNA(u_ant_tx, tx)
 
     uart_bootloader uart_bootloader (
         .clk(clk_periph),            .reset(rst_boot),
@@ -339,31 +313,10 @@ module pipeline (
         .BranchD_out(BranchE_top),  .JumpD_out(JumpE_top),
         .JumpR_out(JumpRE_top),     .ALUType_out(ALUTypE_top));
 
-    // ── ALUResultM — 4 consumers, one buf_1 per bit each ─────
-    wire [31:0] ALUResM_fwdA, ALUResM_fwdB, ALUResM_dmem, ALUResM_wb;
-    genvar gi;
-    generate
-        for (gi = 0; gi < 32; gi = gi + 1) begin : g_aluresM
-            `BUF1(u_fwdA, ALUResM_fwdA[gi], ALUResultM_top[gi])
-            `BUF1(u_fwdB, ALUResM_fwdB[gi], ALUResultM_top[gi])
-            `BUF1(u_dmem, ALUResM_dmem[gi], ALUResultM_top[gi])
-            `BUF1(u_wb,   ALUResM_wb[gi],   ALUResultM_top[gi])
-        end
-    endgenerate
-
-    // ── ResultW — 2 forwarding MUXes ─────────────────────────
-    wire [31:0] ResultW_fwdA, ResultW_fwdB;
-    generate
-        for (gi = 0; gi < 32; gi = gi + 1) begin : g_resultW
-            `BUF1(u_rwA, ResultW_fwdA[gi], ResultW_top[gi])
-            `BUF1(u_rwB, ResultW_fwdB[gi], ResultW_top[gi])
-        end
-    endgenerate
-
     // ── Forwarding MUX A ──────────────────────────────────────
     wire [31:0] SrcA_fwd =
-        (ForwardAE_buf == 2'b10) ? ALUResM_fwdA :
-        (ForwardAE_buf == 2'b01) ? ResultW_fwdA : RD1E_top;
+        (ForwardAE_buf == 2'b10) ? ALUResultM_top :
+        (ForwardAE_buf == 2'b01) ? ResultW_top    : RD1E_top;
 
     assign SrcA_top =
         (ALUSrcAE_top == 2'b10) ? 32'd0   :
@@ -371,8 +324,8 @@ module pipeline (
 
     // ── Forwarding MUX B ──────────────────────────────────────
     assign outB_top =
-        (ForwardBE_buf == 2'b10) ? ALUResM_fwdB :
-        (ForwardBE_buf == 2'b01) ? ResultW_fwdB : RD2E_top;
+        (ForwardBE_buf == 2'b10) ? ALUResultM_top :
+        (ForwardBE_buf == 2'b01) ? ResultW_top    : RD2E_top;
 
     assign ScrB_top = ALUSrcE_top ? ImmExtE_top : outB_top;
 
@@ -414,7 +367,7 @@ module pipeline (
 
     WriteBack_stage writeback_stage (
         .clk(clk_core),               .reset(rst_core),
-        .ALUResultW_in(ALUResM_wb),
+        .ALUResultW_in(ALUResultM_top),
         .ReadDataW_in(Datamem_top),
         .RdW_in(RdM_top),             .PCPlus4W_in(PCPlus4M_top),
         .RegWriteW_in(RegWriteM_top),
@@ -451,7 +404,7 @@ module pipeline (
         .Forward_BE(ForwardBE_top));
 
 // =============================================================
-// SECTION 11 — PERIPHERAL WIRES + BUFFERED CONTROL OUTPUTS
+// SECTION 11 — PERIPHERAL WIRES
 // =============================================================
 
     wire        spi2_start_w,   spi2_busy_w,  spi2_done_w, spi2_pending_w;
@@ -461,32 +414,17 @@ module pipeline (
     wire        UART_tx_start_w, UART_tx_busy_w, UART_rx_ready_w;
     wire [7:0]  UART_tx_data_w,  UART_rx_data_w;
 
-    wire spi1_busy_w    = 1'b0;   // SPI1 stub — replace when added
+    wire spi1_busy_w    = 1'b0;
     wire spi1_pending_w = 1'b0;
 
-    // ── uart_tx_start ─────────────────────────────────────────
-    wire uart_tx_start_buf;
-    `BUF1(u_buf_uart_txst, uart_tx_start_buf, UART_tx_start_w)
-    `ANTENNA(u_ant_uart_txst, uart_tx_start_buf)
-
-    // ── spi2_start ────────────────────────────────────────────
-    wire spi2_start_buf;
-    `BUF1(u_buf_spi2st, spi2_start_buf, spi2_start_w)
-    `ANTENNA(u_ant_spi2st, spi2_start_buf)
-
-    // ── gpio1 wr_en / wdata ───────────────────────────────────
-    wire gpio1_wr_en_buf, gpio1_wdata_buf;
-    `BUF1(u_buf_g1_wren, gpio1_wr_en_buf, gpio1_wr_en_w)
-    `ANTENNA(u_ant_g1_wren, gpio1_wr_en_buf)
-    `BUF1(u_buf_g1_wdat, gpio1_wdata_buf, gpio1_wdata_w)
-    `ANTENNA(u_ant_g1_wdat, gpio1_wdata_buf)
-
-    // ── gpio2 wr_en / wdata ───────────────────────────────────
-    wire gpio2_wr_en_buf, gpio2_wdata_buf;
-    `BUF1(u_buf_g2_wren, gpio2_wr_en_buf, gpio2_wr_en_w)
-    `ANTENNA(u_ant_g2_wren, gpio2_wr_en_buf)
-    `BUF1(u_buf_g2_wdat, gpio2_wdata_buf, gpio2_wdata_w)
-    `ANTENNA(u_ant_g2_wdat, gpio2_wdata_buf)
+    // Named wires for peripheral control signals.
+    // repair_design inserts buffers if fanout > MAX_FANOUT_CONSTRAINT.
+    wire uart_tx_start_buf = UART_tx_start_w;
+    wire spi2_start_buf    = spi2_start_w;
+    wire gpio1_wr_en_buf   = gpio1_wr_en_w;
+    wire gpio1_wdata_buf   = gpio1_wdata_w;
+    wire gpio2_wr_en_buf   = gpio2_wr_en_w;
+    wire gpio2_wdata_buf   = gpio2_wdata_w;
 
 // =============================================================
 // SECTION 12 — DataMem
@@ -494,7 +432,7 @@ module pipeline (
 
     DataMem databus_inst (
         .clk(clk_core),              .reset(rst_core),
-        .aluAddress_in(ALUResM_dmem),
+        .aluAddress_in(ALUResultM_top),
         .DataWriteM_in(WriteDataM_top[7:0]),
         .memwriteM_in(MemWriteM_top),
         .DataMem_out(Datamem_top),
@@ -530,10 +468,8 @@ module pipeline (
         .rx_Data(UART_rx_data_w),
         .rx_ready(UART_rx_ready_w));
 
-    `ANTENNA(u_ant_UART_tx, UART_tx)
-
 // =============================================================
-// SECTION 14 — SPI2 master  (CLK_DIV=8 → 6.25 MHz @ 50 MHz)
+// SECTION 14 — SPI2 Master
 // =============================================================
 
     spi_master #(
@@ -549,9 +485,6 @@ module pipeline (
         .mosi(spi2_mosi),
         .miso(spi2_miso));
 
-    `ANTENNA(u_ant_spi2_sclk, spi2_sclk)
-    `ANTENNA(u_ant_spi2_mosi, spi2_mosi)
-
 // =============================================================
 // SECTION 15 — GPIO1 → SPI1 CS_N
 // =============================================================
@@ -564,7 +497,6 @@ module pipeline (
         .gpio_out1(spi1_cs_n_w));
 
     assign spi1_cs_n = spi1_cs_n_w;
-    `ANTENNA(u_ant_spi1_cs, spi1_cs_n)
 
 // =============================================================
 // SECTION 16 — GPIO2 → SPI2 CS_N
@@ -578,24 +510,20 @@ module pipeline (
         .gpio_out2(spi2_cs_n_w));
 
     assign spi2_cs_n = spi2_cs_n_w;
-    `ANTENNA(u_ant_spi2_cs, spi2_cs_n)
 
 endmodule
 
-// ============================================================
-// COMPANION TCL — synth_pipeline.tcl  (OpenLane / DC)
-// ============================================================
-//
-// create_clock -period 20.0 -name clk [get_ports clk]
-// set_clock_uncertainty -setup 0.5 [get_clocks clk]
-// set_clock_uncertainty -hold  0.2 [get_clocks clk]
-// set_dont_touch [get_cells u_clk_*]
-// set_dont_touch [get_cells u_rst_*]
-// set_ideal_network [get_nets rst_root]
-// set_max_fanout 4 [current_design]
-// set_antenna_rule -metal_ratio 400 -gate_ratio 400
-// set_load 0.05 [all_outputs]
-// set_driving_cell -lib_cell gf180mcu_fd_sc_mcu7t5v0__buf_4 \
-//     -pin Z [all_inputs]
-// ============================================================
-`default_nettype none
+
+
+
+
+
+
+
+
+
+
+
+
+
+

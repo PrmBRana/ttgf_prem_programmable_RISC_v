@@ -290,7 +290,7 @@ module DataMem (
 
 endmodule
 
-`default_nettype none
+
 
 
 

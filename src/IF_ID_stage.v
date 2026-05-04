@@ -26,4 +26,3 @@ module IF_ID_stage (
     end
 endmodule
 
-`default_nettype none

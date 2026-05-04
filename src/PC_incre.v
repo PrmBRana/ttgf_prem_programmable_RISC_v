@@ -9,4 +9,3 @@ module PC_incre (
 endmodule
 
 
-`default_nettype none

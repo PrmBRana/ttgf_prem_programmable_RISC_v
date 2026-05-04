@@ -161,4 +161,3 @@ endmodule
 
 
 
-`default_nettype none

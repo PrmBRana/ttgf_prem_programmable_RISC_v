@@ -104,4 +104,3 @@ module spi_master #(
     end
 endmodule
 
-`default_nettype none

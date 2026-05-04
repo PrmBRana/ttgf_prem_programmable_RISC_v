@@ -36,4 +36,3 @@ module WriteBack_stage (
     end
 endmodule
 
-`default_nettype none

@@ -40,4 +40,3 @@ module MEM_stage (
     end
 endmodule
 
-`default_nettype none
