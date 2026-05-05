@@ -2,8 +2,8 @@
 `timescale 1ns/1ps
 
 // ============================================================
-//  pipeline — RISC-V 5-stage + UART + SPI1(÷4) + SPI2(÷8) + GPIO
-//  Corrected Clock & Reset Tree for GF180MCU
+//  pipeline — RISC-V 5-stage Optimized for GF180MCU
+//  Improved Clock Tree + Reset Tree
 // ============================================================
 
 module pipeline (
@@ -40,7 +40,7 @@ module pipeline (
     wire rst_regfile = reset;
     wire rst_boot    = reset;
 
-    localparam IMEM_ADDR_W = 6;   // 64 words (recommended)
+    localparam IMEM_ADDR_W = 6;   // 64 words
 
     // ====================== PIPELINE WIRES ======================
     wire [31:0] PCPLUS4_top, PC_top, PCF, Instruction1_out, INSTRUCTION;
@@ -76,7 +76,7 @@ module pipeline (
     wire [31:0] mem_wdata;
     wire        stall_Pro, halt_top;
 
-    // ====================== HALT ======================
+    // ====================== HALT LOGIC ======================
     wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
     reg  halt_latch;
 
@@ -94,9 +94,7 @@ module pipeline (
     // =========================================================
     // FETCH
     // =========================================================
-    PC_incre PC(
-        .pc(PCF),
-        .PCPlus4(PCPLUS4_top));
+    PC_incre PC(.pc(PCF), .PCPlus4(PCPLUS4_top));
 
     PCSelect_MUX PCSelect_top(
         .PCScr(PCSCR_top),
@@ -113,28 +111,22 @@ module pipeline (
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(50_000_000),
-        .BAUD_RATE(115_200),
-        .OVERSAMPLE(16)
+        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_boot_inst (
         .clk(clk_periph), .reset(rst_boot),
         .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
         .tx(tx), .rx(rx),
-        .rx_Data(uart_rx_data_boot),
-        .rx_ready(uart_rx_ready_boot));
+        .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
 
     uart_bootloader uart_bootloader(
         .clk(clk_periph), .reset(rst_boot),
         .rx_data(uart_rx_data_boot), .rx_valid(uart_rx_ready_boot),
         .tx_data(boot_tx_data), .tx_start(boot_tx_start),
-        .mem_we(Write_enable),
-        .mem_addr(mem_addr),
-        .mem_wdata(mem_wdata),
-        .stall_pro(stall_Pro));
+        .mem_we(Write_enable), .mem_addr(mem_addr),
+        .mem_wdata(mem_wdata), .stall_pro(stall_Pro));
 
     mem1KB_32bit #(
-        .DEPTH(64),
-        .ADDR_W(IMEM_ADDR_W)
+        .DEPTH(64), .ADDR_W(IMEM_ADDR_W)
     ) imem (
         .clk(clk_imem), .reset(rst_mem),
         .we(Write_enable),
@@ -152,8 +144,7 @@ module pipeline (
         .PC_in(PCF), .PCplus4_in(PCPLUS4_top),
         .instruction_in(Instruction1_out),
         .instruction_out(INSTRUCTION),
-        .PCplus4_out(PCPLUS4D_TOP),
-        .PC_out(PCD_top));
+        .PCplus4_out(PCPLUS4D_TOP), .PC_out(PCD_top));
 
     wire [6:0]  INSTR_op  = INSTRUCTION[6:0];
     wire [2:0]  INSTR_f3  = INSTRUCTION[14:12];
@@ -214,24 +205,20 @@ module pipeline (
     wire [31:0] ResultW_fwdA = ResultW_top;
     wire [31:0] ResultW_fwdB = ResultW_top;
 
-    wire [31:0] SrcA_fwd =
-        (ForwardAE_top == 2'b10) ? ALUResM_fwdA :
-        (ForwardAE_top == 2'b01) ? ResultW_fwdA : RD1E_top;
+    wire [31:0] SrcA_fwd = (ForwardAE_top == 2'b10) ? ALUResM_fwdA :
+                           (ForwardAE_top == 2'b01) ? ResultW_fwdA : RD1E_top;
 
-    assign SrcA_top =
-        (ALUSrcAE_top == 2'b10) ? 32'd0 :
-        (ALUSrcAE_top == 2'b01) ? PCE_top : SrcA_fwd;
+    assign SrcA_top = (ALUSrcAE_top == 2'b10) ? 32'd0 :
+                      (ALUSrcAE_top == 2'b01) ? PCE_top : SrcA_fwd;
 
-    assign outB_top =
-        (ForwardBE_top == 2'b10) ? ALUResM_fwdB :
-        (ForwardBE_top == 2'b01) ? ResultW_fwdB : RD2E_top;
+    assign outB_top = (ForwardBE_top == 2'b10) ? ALUResM_fwdB :
+                      (ForwardBE_top == 2'b01) ? ResultW_fwdB : RD2E_top;
 
     assign ScrB_top = ALUSrcE_top ? ImmExtE_top : outB_top;
 
     wire [31:0] base_addr_w = JumpRE_top ? RD1E_top : PCE_top;
-    assign PCTarget_top = JumpRE_top
-        ? ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE)
-        : (base_addr_w + ImmExtE_top);
+    assign PCTarget_top = JumpRE_top ?
+        ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE) : (base_addr_w + ImmExtE_top);
 
     assign PCSCR_top = (zero_top & BranchE_top) | JumpE_top;
 
@@ -350,3 +337,4 @@ module pipeline (
         .gpio_out2(spi2_cs_n));
 
 endmodule
+
