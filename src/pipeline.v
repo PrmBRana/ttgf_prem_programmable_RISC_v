@@ -21,14 +21,7 @@ module pipeline (
 );
 
     // ====================== STRONG CLOCK GATING ======================
-    (* keep = "true" *) wire clk_gated;
-
-    reg clk_en_r;
-    always @(posedge clk) 
-        clk_en_r <= ~halt_final;
-
-    assign clk_gated = clk & clk_en_r;
-
+    wire clk_gated = clk;
     wire rst = reset;
 
     localparam IMEM_ADDR_W = 6;
@@ -102,7 +95,7 @@ module pipeline (
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_boot_inst (
         .clk(clk_gated), .reset(rst),
         .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
@@ -284,7 +277,7 @@ module pipeline (
     );
 
     uart_Tx_fixed0 #(
-        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_inst0 (
         .clk(clk_gated), .reset(rst),
         .tx_Start(UART_tx_start_w), .tx_Data(UART_tx_data_w),
