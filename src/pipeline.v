@@ -3,7 +3,7 @@
 
 // ============================================================
 //  pipeline — RISC-V 5-stage Optimized for GF180MCU
-//  Improved Clock Tree + Reset Tree
+//  Clock Gating + Multi-level buffering
 // ============================================================
 
 module pipeline (
@@ -20,25 +20,18 @@ module pipeline (
     output wire spi2_cs_n
 );
 
-    // ====================== CLOCK TREE ======================
-    (* keep = "true" *) wire clk_root;
-    (* keep = "true" *) wire clk_core;
-    (* keep = "true" *) wire clk_imem;
-    (* keep = "true" *) wire clk_regfile;
-    (* keep = "true" *) wire clk_periph;
+    // ====================== CLOCK GATING ======================
+    (* keep = "true" *) wire clk_gated;
 
-    assign clk_root    = clk;
-    assign clk_core    = clk_root;
-    assign clk_imem    = clk_root;
-    assign clk_regfile = clk_root;
-    assign clk_periph  = clk_root;
+    // Gating when processor is halted
+    reg clk_en_r;
+    always @(posedge clk) 
+        clk_en_r <= ~halt_final;
 
-    // ====================== RESET TREE ======================
-    wire rst_core    = reset;
-    wire rst_mem     = reset;
-    wire rst_periph  = reset;
-    wire rst_regfile = reset;
-    wire rst_boot    = reset;
+    assign clk_gated = clk & clk_en_r;
+
+    // ====================== RESET ======================
+    wire rst = reset;
 
     localparam IMEM_ADDR_W = 6;   // 64 words
 
@@ -76,12 +69,12 @@ module pipeline (
     wire [31:0] mem_wdata;
     wire        stall_Pro, halt_top;
 
-    // ====================== HALT LOGIC ======================
+    // ====================== HALT ======================
     wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
     reg  halt_latch;
 
-    always @(posedge clk_regfile or posedge rst_core) begin
-        if (rst_core)          halt_latch <= 1'b0;
+    always @(posedge clk or posedge rst) begin
+        if (rst)               halt_latch <= 1'b0;
         else if (stall_Pro)    halt_latch <= 1'b0;
         else if (halt_active)  halt_latch <= 1'b1;
     end
@@ -103,7 +96,7 @@ module pipeline (
         .Mux3_PC(PC_top));
 
     pc_register Register_top(
-        .clk(clk_core), .reset(rst_core),
+        .clk(clk_gated), .reset(rst),
         .PCF_in(PC_top), .stallF(StallF_net),
         .PCF_out(PCF));
 
@@ -113,13 +106,13 @@ module pipeline (
     uart_Tx_fixed #(
         .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_boot_inst (
-        .clk(clk_periph), .reset(rst_boot),
+        .clk(clk_gated), .reset(rst),
         .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
         .tx(tx), .rx(rx),
         .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
 
     uart_bootloader uart_bootloader(
-        .clk(clk_periph), .reset(rst_boot),
+        .clk(clk_gated), .reset(rst),
         .rx_data(uart_rx_data_boot), .rx_valid(uart_rx_ready_boot),
         .tx_data(boot_tx_data), .tx_start(boot_tx_start),
         .mem_we(Write_enable), .mem_addr(mem_addr),
@@ -128,7 +121,7 @@ module pipeline (
     mem1KB_32bit #(
         .DEPTH(64), .ADDR_W(IMEM_ADDR_W)
     ) imem (
-        .clk(clk_imem), .reset(rst_mem),
+        .clk(clk_gated), .reset(rst),
         .we(Write_enable),
         .addr(mem_addr[IMEM_ADDR_W-1:0]),
         .wdata(mem_wdata),
@@ -139,7 +132,7 @@ module pipeline (
     // DECODE
     // =========================================================
     IF_ID_stage IF_DF_top(
-        .clk(clk_core), .reset(rst_core),
+        .clk(clk_gated), .reset(rst),
         .stallD(StallD_net), .flushD(FlushD_top),
         .PC_in(PCF), .PCplus4_in(PCPLUS4_top),
         .instruction_in(Instruction1_out),
@@ -165,7 +158,7 @@ module pipeline (
         .ImmSrc(ImmSrc_top), .ALUType(ALUtyp_top));
 
     Reg_file Reg_file_top(
-        .clk(clk_regfile),
+        .clk(clk_gated),
         .rs1_addr(INSTR_rs1), .rs2_addr(INSTR_rs2),
         .rd_addr(RdW_top), .Regwrite(RegWriteW_top),
         .Write_data(ResultW_top),
@@ -178,7 +171,7 @@ module pipeline (
     // EXECUTE
     // =========================================================
     EX_stage ex_stage(
-        .clk(clk_core), .reset(rst_core), .flushE(FlushE_top),
+        .clk(clk_gated), .reset(rst), .flushE(FlushE_top),
         .RD1D_in(RD1_top), .RD2D_in(RD2_top), .ImmExtD_in(ImmExtD_top),
         .PCPlus4D_in(PCPLUS4D_TOP), .PC_D_in(PCD_top),
         .Rs1D_in(INSTR_rs1), .Rs2D_in(INSTR_rs2), .RdD_in(INSTR_rd),
@@ -231,7 +224,7 @@ module pipeline (
     // MEMORY STAGE
     // =========================================================
     MEM_stage mem_stage(
-        .clk(clk_core), .reset(rst_core),
+        .clk(clk_gated), .reset(rst),
         .ALUResult_in(ALUResultE_top), .WriteData_in(outB_top),
         .RdM_in(RdE_top), .PCPlus4M_in(PCPlus4E_top),
         .RegWriteM_in(RegWriteE_top), .ResultSrcM_in(ResultSrcE_top),
@@ -245,7 +238,7 @@ module pipeline (
     // WRITEBACK
     // =========================================================
     WriteBack_stage writeback_stage(
-        .clk(clk_core), .reset(rst_core),
+        .clk(clk_gated), .reset(rst),
         .ALUResultW_in(ALUResM_wb), .ReadDataW_in(Datamem_top),
         .RdW_in(RdM_top), .PCPlus4W_in(PCPlus4M_top),
         .RegWriteW_in(RegWriteM_top), .ResultSrcW_in(ResultSrcM_top),
@@ -285,7 +278,7 @@ module pipeline (
     wire [7:0]  UART_tx_data_w, UART_rx_data_w;
 
     DataMem databus_inst (
-        .clk(clk_core), .reset(rst_core),
+        .clk(clk_gated), .reset(rst),
         .aluAddress_in(ALUResM_dmem),
         .DataWriteM_in(WriteDataM_top[7:0]),
         .memwriteM_in(MemWriteM_top),
@@ -310,7 +303,7 @@ module pipeline (
     uart_Tx_fixed0 #(
         .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_inst0 (
-        .clk(clk_periph), .reset(rst_periph),
+        .clk(clk_gated), .reset(rst),
         .tx_Start(UART_tx_start_w), .tx_Data(UART_tx_data_w),
         .tx(UART_tx), .tx_busy(UART_tx_busy_w),
         .rx(UART_rx_line), .rx_Data(UART_rx_data_w), .rx_ready(UART_rx_ready_w));
@@ -318,23 +311,25 @@ module pipeline (
     spi_master #(
         .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(8)
     ) spi2_inst (
-        .clk(clk_periph), .reset(rst_periph),
+        .clk(clk_gated), .reset(rst),
         .start(spi2_start_w), .tx_data(spi2_tx_data_w),
         .rx_data(spi2_rx_data_w), .busy(spi2_busy_w),
         .done(spi2_done_w), .sclk(spi2_sclk),
         .mosi(spi2_mosi), .miso(spi2_miso));
 
     gpio1_io gpio1(
-        .clk(clk_periph), .reset(rst_periph),
+        .clk(clk_gated), .reset(rst),
         .wr_en1(gpio1_wr_en_w), .wdata1(gpio1_wdata_w),
         .spi_busy(spi2_busy_w), .spi_pending(spi2_pending_w),
         .gpio_out1(spi1_cs_n));
 
     gpio2_io gpio2(
-        .clk(clk_periph), .reset(rst_periph),
+        .clk(clk_gated), .reset(rst),
         .wr_en2(gpio2_wr_en_w), .wdata2(gpio2_wdata_w),
         .spi_busy(spi2_busy_w), .spi_pending(spi2_pending_w),
         .gpio_out2(spi2_cs_n));
 
 endmodule
+
+
 
