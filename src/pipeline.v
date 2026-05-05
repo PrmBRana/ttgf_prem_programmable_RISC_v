@@ -376,10 +376,7 @@ module pipeline(
     wire [7:0]  UART_tx_data_w, UART_rx_data_w;
 
     // DataMem — byte-wide write port: connect [7:0] only
-    DataMem #(
-        .UART_FIFO_DEPTH(2),
-        .SPI_RX_DEPTH(2)
-    ) databus_inst (
+    DataMem  databus_inst (
         .clk             (clk_core),
         .reset           (rst_core),
         .aluAddress_in   (ALUResM_dmem),
