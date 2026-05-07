@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  DataMem.v — Memory-mapped peripheral controller
@@ -290,8 +289,7 @@ module DataMem (
 
 endmodule
 
-
-
+`default_nettype wire
 
 
 

@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  Hazard_Unit — stall, flush, and forwarding control
@@ -80,6 +79,6 @@ module Hazard_Unit (
     end
 endmodule
 
-
+`default_nettype wire
 
 

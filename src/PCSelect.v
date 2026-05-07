@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module PCSelect_MUX (
     input  wire        PCScr,
@@ -10,6 +9,6 @@ module PCSelect_MUX (
     assign Mux3_PC = PCScr ? PCBranch : PCSequential;
 endmodule
 
-
+`default_nettype wire
 
 

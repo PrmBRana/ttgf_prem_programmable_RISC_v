@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns/1ps
 
 module pc_register (
     input  wire        clk,
@@ -14,7 +13,7 @@ module pc_register (
     end
 endmodule
 
-
+`default_nettype wire
 
 
 

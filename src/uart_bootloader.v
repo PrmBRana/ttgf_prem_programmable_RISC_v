@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  uart_bootloader
@@ -158,7 +157,7 @@ module uart_bootloader (
     end
 endmodule
 
-
+`default_nettype wire
 
 
 

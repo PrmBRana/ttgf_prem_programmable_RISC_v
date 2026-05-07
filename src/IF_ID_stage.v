@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module IF_ID_stage (
     input  wire        clk,
@@ -27,3 +26,4 @@ module IF_ID_stage (
 endmodule
 
 
+`default_nettype wire

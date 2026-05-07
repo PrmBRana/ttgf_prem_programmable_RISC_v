@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  Reg_file — 32×32 register file
@@ -45,6 +44,6 @@ module Reg_file (
 
 endmodule
 
-
+`default_nettype wire
 
 

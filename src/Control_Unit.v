@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // =============================================================================
 // Control.v
@@ -172,6 +171,7 @@ module Control (
     end
 endmodule
 
+`default_nettype wire
 
 
 

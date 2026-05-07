@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns/1ps
 
 // ============================================================
 //  pipeline.v — Final version for GF180MCU Tiny Tapeout
@@ -414,7 +413,7 @@ module pipeline (
 
 endmodule
 
-
+`default_nettype wire
 
 
 

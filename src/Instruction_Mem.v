@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  mem1KB_32bit — Instruction memory (DEPTH × 32-bit words)
@@ -53,6 +52,6 @@ module mem1KB_32bit #(
 
 endmodule
 
-
+`default_nettype wire
 
 

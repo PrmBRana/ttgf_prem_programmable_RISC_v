@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module MEM_stage (
     input  wire        clk,
@@ -40,4 +39,4 @@ module MEM_stage (
     end
 endmodule
 
-
+`default_nettype wire

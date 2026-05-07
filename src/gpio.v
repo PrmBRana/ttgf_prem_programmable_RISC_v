@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns/1ps
 
 module gpio1_io (
     input  wire clk,
@@ -79,5 +78,6 @@ module gpio2_io (
     assign gpio_out2 = gpio_out_reg;
 endmodule
 
+`default_nettype wire
 
 

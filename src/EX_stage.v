@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // =============================================================================
 // EX_stage.v — ID/EX pipeline latch
@@ -95,6 +94,6 @@ module EX_stage (
     end
 endmodule
 
-
+`default_nettype wire
 
 

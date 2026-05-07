@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module uart_Tx_fixed0 #(
     parameter CLK_FREQ   = 50_000_000,
@@ -112,5 +111,5 @@ module uart_Tx_fixed0 #(
     end
 endmodule
 
-
+`default_nettype wire
 

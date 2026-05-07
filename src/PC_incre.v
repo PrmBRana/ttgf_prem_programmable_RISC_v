@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module PC_incre (
     input  wire [31:0] pc,
@@ -8,5 +7,5 @@ module PC_incre (
     assign PCPlus4 = pc + 32'd4;
 endmodule
 
-
+`default_nettype wire
 

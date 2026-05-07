@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns/1ps
 
 module spi_master #(
     parameter DATA_WIDTH = 8,
@@ -104,4 +103,4 @@ module spi_master #(
     end
 endmodule
 
-
+`default_nettype wire

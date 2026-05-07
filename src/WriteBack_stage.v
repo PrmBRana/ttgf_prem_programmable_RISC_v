@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module WriteBack_stage (
     input  wire        clk,
@@ -36,4 +35,4 @@ module WriteBack_stage (
     end
 endmodule
 
-
+`default_nettype wire

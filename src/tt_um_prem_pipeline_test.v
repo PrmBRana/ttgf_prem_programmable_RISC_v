@@ -1,19 +1,4 @@
 `default_nettype none
-`timescale 1ns/1ps
-
-// ============================================================
-//  tt_um_prem_pipeline_test — Tiny Tapeout top wrapper
-//
-//  Fixes vs previous version:
-//  ✓ pipeline port names corrected to match pipeline.v:
-//      spi_sclk  → spi2_sclk
-//      spi_mosi  → spi2_mosi
-//      spi_miso  → spi2_miso
-//      gpio1_n   → spi1_cs_n
-//      gpio2_n   → spi2_cs_n
-//  ✓ uio_oe double-assign removed (was assigning 8'b0 then
-//    individual bits — the 8'b0 clobbered the bit assigns)
-// ============================================================
 
 module tt_um_prem_pipeline_test (
     input  wire [7:0] ui_in,
@@ -98,7 +83,7 @@ module tt_um_prem_pipeline_test (
 endmodule
 
 
-
+`default_nettype wire
 
 
 

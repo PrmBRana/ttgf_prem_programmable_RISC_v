@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 // ============================================================
 //  imm — Immediate generator
@@ -51,7 +50,7 @@ module imm (
     end
 endmodule
 
-
+`default_nettype wire
 
 
 

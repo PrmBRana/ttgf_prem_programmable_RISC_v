@@ -1,6 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
-
 // ============================================================
 //  uart_Tx_fixed — Bootloader UART (TX + RX, oversampled x16)
 //
@@ -209,5 +207,5 @@ module uart_Tx_fixed #(
 
 endmodule
 
-
+`default_nettype wire
 

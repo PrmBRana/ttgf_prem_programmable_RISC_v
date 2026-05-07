@@ -1,5 +1,4 @@
 `default_nettype none
-`timescale 1ns / 1ps
 
 module Write_back (
     input  wire [31:0] ALUResultW_in,
@@ -14,6 +13,6 @@ module Write_back (
                                                 32'b0;
 endmodule
 
-
+`default_nettype wire
 
 
