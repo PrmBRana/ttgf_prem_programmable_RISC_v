@@ -46,9 +46,6 @@ module pipeline (
     input  wire spi2_miso,
     output wire spi2_cs_n
 );
-
-    localparam IMEM_ADDR_W = 6;   // DEPTH=64 → 6-bit address
-
     // =========================================================
     // PIPELINE WIRES
     // =========================================================
