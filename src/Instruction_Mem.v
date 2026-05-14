@@ -1,8 +1,8 @@
 `default_nettype none
 
-module mem1KB_32bit #(
-    parameter DEPTH  = 64,
-    parameter ADDR_W = 6
+module instruction_mem #(
+    parameter integer DEPTH  = 64,
+    parameter integer ADDR_W = 6
 )(
     input  wire              clk,
     input  wire              we,
@@ -17,24 +17,30 @@ module mem1KB_32bit #(
 
     reg [31:0] mem [0:DEPTH-1];
 
-    wire [ADDR_W-1:0] word_idx;
+    // Correct byte-to-word conversion
+    // Note: read_Address[1:0] are always 0 (word-aligned access)
+    //       read_Address[31:8] unused in 64-word design (6-bit addressing)
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [ADDR_W-1:0] word_idx = read_Address[ADDR_W+1:2];
+    /* verilator lint_on UNUSEDSIGNAL */
 
-    assign word_idx = read_Address[ADDR_W+1:2];
-
-    // synchronous write
+    // Write
     always @(posedge clk) begin
         if (we)
             mem[addr] <= wdata;
     end
 
-    // asynchronous read
-    assign Instruction_out =
-        (word_idx < DEPTH) ? mem[word_idx] : NOP;
-
+    // Read
+    // WIDTHEXPAND: word_idx (6 bits) < DEPTH (64 = 7 bits)
+    // Safe because word_idx can only be 0..63, always < DEPTH
+    /* verilator lint_off WIDTHEXPAND */
+    assign Instruction_out = (word_idx < DEPTH) ? mem[word_idx] : NOP;
+    /* verilator lint_on WIDTHEXPAND */
 
 endmodule
 
 `default_nettype wire
+
 
 
 

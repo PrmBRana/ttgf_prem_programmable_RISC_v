@@ -154,7 +154,7 @@ module pipeline (
         .mem_wdata(mem_wdata),
         .stall_pro(stall_Pro));
 
-    mem1KB_32bit #(.DEPTH(64), .ADDR_W(6)) imem (
+    instruction_mem #(.DEPTH(64), .ADDR_W(6)) imem (
         .clk(clk), 
         .we(Write_enable),
         .addr(mem_addr[5:0]),

@@ -180,7 +180,7 @@ async def uart_spi_test(dut):
 
     # SPI response
     # Use triple quotes to handle internal quotes like "Munal"
-    text_data = """Antarikchya Pratisthan Nepal (APN) is a pioneering non-profit organization dedicated to establishing a sustainable space ecosystem within Nepal, driven by the belief that space technology is essential for national development. Established with a vision to transform Nepal from a passive consumer of space services into an active contributor to the global space sector, APN focuses on three core pillars: research and development, capacity building, and community outreach. At the heart of their mission is the development of indigenous satellite technology. One of their flagship projects is "Munal," a 1U CubeSat built by high school students, which serves as a powerful symbol of youth empowerment and technical capability. By involving students in the entire lifecycle of a satellite mission—from design and fabrication to testing—APN is fostering a new generation of aerospace engineers and scientists in a country that historically lacked a formal space program."""
+    text_data = """Tiny Tapeout lets you design custom silicon chips cheaply. It combines multiple open-source designs into one chip using a LibreLane or OpenLane flow. Perfect for students and hobbyists.*****************"""
     
     slave_tx = [ord(c) for c in text_data]
 
