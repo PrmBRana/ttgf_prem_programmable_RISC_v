@@ -1,7 +1,7 @@
 `default_nettype none
 
 module uart_Tx_fixed0 #(
-    parameter CLK_FREQ   = 40_000_000,
+    parameter CLK_FREQ   = 25_000_000,
     parameter BAUD_RATE  = 115_200,
     parameter OVERSAMPLE = 8
 )(
