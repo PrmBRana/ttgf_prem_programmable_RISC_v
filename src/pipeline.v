@@ -27,7 +27,7 @@
 //
 //  ✓ spi2_pending_w fed to gpio2 (not floating).
 //
-//  ✓ CLK_FREQ=50_000_000 matches 50 MHz clock.
+//  ✓ CLK_FREQ=40_000_000 matches 40 MHz clock.
 //
 //  ✓ Hazard_Unit uses flat boolean expressions (fixes the
 //    OR4→OR4→OR4 cascade that was the critical path).
@@ -366,7 +366,7 @@ module pipeline (
     // Peripheral UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(32_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(8)
+        .CLK_FREQ(32_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_inst0 (
         .clk(clk), .reset(reset),
         .tx_Start(UART_tx_start_w),
@@ -398,10 +398,10 @@ module pipeline (
     // gpio1 watches spi2 status so CS deasserts safely
     // =========================================================
     gpio1_io gpio1 (
-        .clk(clk), .reset(reset),
-        .wr_en1(gpio1_wr_en_w), .wdata1(gpio1_wdata_w),
-        .spi_busy(spi2_busy_w),
-        .spi_pending(spi2_pending_w),
+        .clk(clk), 
+        .reset(reset),
+        .wr_en1(gpio1_wr_en_w), 
+        .wdata1(gpio1_wdata_w),
         .gpio_out1(spi1_cs_n));
 
     // =========================================================

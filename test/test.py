@@ -68,7 +68,8 @@ async def test_uart_bootloader(dut):
             0xfff28293,
             0xfd9ff06f,
             0x00372023,
-            0x00000073
+            0x00000073,
+            0xDEADBEEF  
       ]
       dut._log.info("Uploading instructions to processor...")
       for idx, inst in enumerate(instructions):
