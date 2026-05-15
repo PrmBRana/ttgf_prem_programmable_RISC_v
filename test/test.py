@@ -165,7 +165,7 @@ async def spi_debug_monitor(dut):
 async def uart_spi_test(dut):
 
     # Clock
-    cocotb.start_soon(Clock(dut.clk, 31.25, units="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 20, units="ns").start())
 
     # Reset
     dut.rst_n.value = 1

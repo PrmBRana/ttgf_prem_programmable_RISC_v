@@ -7,7 +7,7 @@
 //  (Verilog-2001 compatible, no SystemVerilog casts).
 // ============================================================
 module uart_Tx_fixed #(
-    parameter CLK_FREQ   = 32_000_000,
+    parameter CLK_FREQ   = 50_000_000,
     parameter BAUD_RATE  = 115_200,
     parameter OVERSAMPLE = 16
 )(
