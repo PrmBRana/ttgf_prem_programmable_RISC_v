@@ -27,7 +27,7 @@
 //
 //  ✓ spi2_pending_w fed to gpio2 (not floating).
 //
-//  ✓ CLK_FREQ=40_000_000 matches 40 MHz clock.
+//  ✓ CLK_FREQ=50_000_000 matches 50 MHz clock.
 //
 //  ✓ Hazard_Unit uses flat boolean expressions (fixes the
 //    OR4→OR4→OR4 cascade that was the critical path).
@@ -132,7 +132,7 @@ module pipeline (
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(40_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(8)
+        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(8)
     ) uart_boot_inst (
         .clk(clk), .reset(reset),
         .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
@@ -366,7 +366,7 @@ module pipeline (
     // Peripheral UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(8)
     ) uart_inst0 (
         .clk(clk), .reset(reset),
         .tx_Start(UART_tx_start_w),
