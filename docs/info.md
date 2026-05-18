@@ -157,7 +157,7 @@ This is the corresponding compiled RISC-V instruction sequence:
            0x00000073,
            0xBAADF00D // sentinel valuse (last always)
 
-### This sentinel  value detected by the uart bootloader then stop and start execute the processor.
+#### This sentinel  value detected by the uart bootloader then stop and start execute the processor.
 
 
 ## External hardware
