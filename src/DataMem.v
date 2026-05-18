@@ -13,7 +13,7 @@ module DataMem (
     output reg         uart_tx_start,
     input  wire        uart_tx_busy,
 
-    // UART RX - GF180 Optimized
+    // UART RX
     input  wire [7:0]  uart_in_data,
     input  wire        uart_rx_ready,
 
@@ -33,10 +33,21 @@ module DataMem (
 );
 
     // =========================================================
-    // Fast Partial Address Decoding (GF180 Optimized)
+    // Address Decoding (GF180 Optimized)
     // =========================================================
+    // We use sparse address map:
+    // - Bits [31:28]: Base address selector (4 bits = 16 bases)
+    // - Bits [3:0]:   Register offset (4 bits = 16 registers/base)
+    // - Bits [27:4]:  Unused (sparse addressing)
+    // 
+    // Note: Bits [27:4] of aluAddress_in are intentionally not decoded.
+    // This is the standard SoC peripheral pattern for efficient design.
+    // Verilator lint directive suppresses UNUSEDSIGNAL warning for
+    // the intentionally unused address bits.
+    /* verilator lint_off UNUSEDSIGNAL */
     wire [3:0] addr_high = aluAddress_in[31:28];
     wire [3:0] addr_low  = aluAddress_in[3:0];
+    /* verilator lint_on UNUSEDSIGNAL */
 
     wire base_uart = (addr_high == 4'h1);
     wire base_gpio = (addr_high == 4'h3);
@@ -56,7 +67,7 @@ module DataMem (
     wire sel_spi2_rxst = base_spi && (addr_low == 4'hC);
 
     // =========================================================
-    // UART TX Handshake (unchanged - good for GF180)
+    // UART TX Handshake (GF180 Optimized)
     // =========================================================
     reg [7:0] uart_tx_reg;
     reg       uart_tx_pending;
@@ -99,15 +110,15 @@ module DataMem (
     end
 
     // =========================================================
-    // UART RX - GF180 OPTIMIZED (FIX: Remove NOT from comb path)
+    // UART RX (GF180 Optimized - Timing Fixed)
     // =========================================================
-    // Problem fixed: Register uart_rx_ready to remove combinational
-    // NOT gate from critical path. This improves timing by ~0.6 ns
-    // on GF180MCU-D (which has weak NAND/NOR cells).
+    // Fixed: Registered uart_rx_ready to remove NOT gate from critical path
+    // Improvement: +0.6 ns timing margin on GF180MCU-D
+    // Cost: +1 cycle latency (acceptable for UART RX interface)
     
-    reg uart_rx_ready_r;         // Pipeline stage 1: Sample ready signal
-    reg [7:0] uart_rx_reg;       // Capture incoming data
-    reg       uart_rx_valid;     // Data valid flag
+    reg uart_rx_ready_r;
+    reg [7:0] uart_rx_reg;
+    reg       uart_rx_valid;
 
     wire uart_rx_rd = !memwriteM_in && sel_uart_rx && uart_rx_valid;
 
@@ -117,18 +128,16 @@ module DataMem (
             uart_rx_reg     <= 8'd0;
             uart_rx_valid   <= 1'b0;
         end else begin
-            // Stage 1: Register the ready signal (removes NOT from comb path)
+            // Stage 1: Register the ready signal
             uart_rx_ready_r <= uart_rx_ready;
 
             // Stage 2: Capture data when ready was seen
-            // This logic has no NOT gate, much faster on GF180
             if (uart_rx_ready_r) begin
                 uart_rx_reg   <= uart_in_data;
                 uart_rx_valid <= 1'b1;
             end
 
             // Clear valid when CPU reads the data
-            // Separated from capture logic to reduce complexity
             if (uart_rx_rd) begin
                 uart_rx_valid <= 1'b0;
             end
@@ -136,7 +145,7 @@ module DataMem (
     end
 
     // =========================================================
-    // SPI2 TX Handshake (unchanged)
+    // SPI2 TX Handshake (Unchanged)
     // =========================================================
     reg       spi2_pending;
     reg [7:0] spi2_tx_buf;
@@ -185,7 +194,7 @@ module DataMem (
     end
 
     // =========================================================
-    // SPI2 RX (unchanged)
+    // SPI2 RX (Unchanged)
     // =========================================================
     reg [7:0] spi2_rx_reg;
     reg       spi2_rx_valid;
