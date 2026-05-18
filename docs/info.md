@@ -9,12 +9,49 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-This project implements a compact 32-bit RISC-V processor featuring a five-stage pipeline architecture, consisting of instruction fetch, decode, execute, memory, and write-back stages. The pipeline allows multiple instructions to be processed simultaneously, improving overall performance and efficiency within limited hardware resources. The design integrates a single UART interface that serves as both a program loading mechanism and a communication channel. Upon reset, the processor enters a programming mode where instructions are received serially through the UART RX line and stored into instruction memory. After the program is fully loaded, the processor transitions to execution mode and begins fetching and executing instructions sequentially through the pipeline. In addition to UART, the design includes an SPI master interface, enabling communication with external devices through standard signals such as MOSI, MISO, SCLK, and chip select. The SPI interface is controlled via memory-mapped registers, allowing the processor to interact with peripherals such as sensors or external memory devices. The overall system is optimized for environments with limited I/O and silicon area, making it suitable for compact ASIC implementations.
+This project implements a compact 32-bit RISC-V processor with a five-stage pipeline architecture consisting of Instruction Fetch (IF), Decode (ID), Execute (EX), Memory (MEM), and Write-Back (WB) stages. The pipelined design allows multiple instructions to be processed concurrently, improving throughput while maintaining a small hardware footprint.
+
+The system includes two UART, one SPI and two GPIO interfaces:
+
+1. UART1 is used as a bootloader interface for program loading
+2. UART2 is used as a general-purpose communication interface during execution
+3. SPI is used as a general-purpose communication interface during execution
+4. GPIO1 is used as for LED blink or others
+5. GPIO2 is used for chip select for SPI
+
+During reset, the processor enters bootloader mode. In this mode, instructions are received serially through the UART1 RX pin and stored into instruction memory. Once the program loading sequence is complete, the processor automatically switches to execution mode and begins fetching and executing instructions through the pipeline.
+
+The system operates with a 25 MHz system clock. Both UART interfaces use a 115200 baud rate with x16 oversampling. The SPI interface operates in Mode 0 (CPOL = 0, CPHA = 0) with a clock frequency of approximately 4.17 MHz (CLK_DIV = 3).
+
+In addition to UART, the design includes an SPI master interface for communication with external peripherals such as sensors or external memory devices. The SPI interface is controlled through dedicated hardware signals (MOSI, MISO, SCLK, and CS), enabling full-duplex data transfer.
+
+The design is optimized for low-area ASIC implementations and is suitable for embedded systems, educational processors, and sensor interfacing applications.
 
 ## How to test
 
-The design can be tested through simulation or hardware interaction. In simulation, the project is typically run using tools like Icarus Verilog and cocotb by executing a standard build command, which compiles the design, runs the testbench, and generates waveform files for analysis. During testing, the UART interface is used to send program instructions serially into the processor while it is in programming mode. Each instruction is transmitted in a standard UART frame format and stored sequentially in memory. After loading is complete, the processor automatically begins execution, and its behavior can be verified by observing internal signals such as the program counter, register file updates, and pipeline stage outputs in a waveform viewer. The SPI interface can be tested by providing input data on the MISO line and monitoring the generated MOSI, clock, and chip select signals to confirm correct communication timing and data transfer. Functional correctness is verified by ensuring proper instruction execution, memory access, and peripheral interaction.
+The design can be tested using both simulation and hardware.
+
+In simulation, the project is typically run using Icarus Verilog and cocotb. A standard testbench compiles the design, applies clock and reset signals, and executes functional test sequences. Waveform outputs can be analyzed using tools such as GTKWave.
+
+For UART testing, the bootloader interface (UART1) is used to send a sequence of 32-bit instructions serialized as bytes. The processor acknowledges correct reception and stores the instructions in instruction memory. After loading is complete, execution begins automatically, and correctness can be verified by monitoring pipeline activity, register updates, and memory access patterns.
+
+For SPI testing, an external SPI master or testbench drives the SCLK, MOSI, and CS signals while observing the MISO output from the processor. Correct timing (Mode 0) and data integrity are verified by comparing transmitted and received byte streams.
+
+Functional validation includes verifying:
+
+1. Correct instruction execution
+2. Proper pipeline operation
+3. Memory read/write correctness
+4. UART bootloading sequence
+5. SPI data transfer timing and integrity
 
 ## External hardware
 
-Control signals like clock, reset and enable signals, instruction memory
+his design requires only standard external signals for operation:
+
+1. Clock input (25 MHz)
+2. Active-low reset (rst_n)
+3. Enable signal (ena) from system controller
+4. UART1 RX/TX for bootloading
+5. UART2 RX/TX for communication
+6 .SPI interface signals (MOSI, MISO, SCLK, CS)

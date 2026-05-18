@@ -27,7 +27,3 @@ module instruction_mem #(
 endmodule
 
 `default_nettype wire
-
-
-
-

@@ -27,31 +27,31 @@ module tt_um_prem_pipeline_test (
     wire reset = ~rst_n;
 
     // ── UART signals ─────────────────────────────────────
-    wire uart1_rx = ui_in[3];   // Bootloader RX
-    wire uart2_rx = ui_in[4];   // Peripheral UART RX
-    wire uart1_tx;
-    wire uart2_tx;
+    wire BOOT_UART1_RX = ui_in[3];   // Bootloader RX
+    wire PER_UART2_RX = ui_in[4];   // Peripheral UART RX
+    wire BOOT_UART1_TX;
+    wire PER_UART2_TX;
 
     // ── SPI2 signals ─────────────────────────────────────
-    wire spi2_miso_w = uio_in[7];
+    wire SPI_MISO_TOP = uio_in[7];
 
     // ── GPIO signals ─────────────────────────────────────
-    wire spi1_cs_n_w;
-    wire spi2_cs_n_w;
-    wire spi2_mosi_w;
-    wire spi2_sclk_w;
+    wire GPIO1_TOP;
+    wire SPI_CS_GPIO2_TOP;
+    wire SPI_MOSI_TOP;
+    wire SPI_SCLK_TOP;
 
     // ── Output assignments ───────────────────────────────
-    assign uo_out[0]   = uart1_tx;      // Bootloader TX
-    assign uo_out[1]   = uart2_tx;      // Peripheral TX
+    assign uo_out[0]   = BOOT_UART1_TX;      // Bootloader TX
+    assign uo_out[1]   = PER_UART2_TX;      // Peripheral TX
     assign uo_out[7:2] = 6'b000000;     // unused
 
     // uio_out
-    assign uio_out[0] = spi1_cs_n_w;    // SPI1 CS_N
+    assign uio_out[0] = GPIO1_TOP;    // SPI1 CS_N
     assign uio_out[1] = 1'b0;
-    assign uio_out[2] = spi2_mosi_w;    // SPI2 MOSI
-    assign uio_out[3] = spi2_sclk_w;    // SPI2 SCLK
-    assign uio_out[4] = spi2_cs_n_w;    // SPI2 CS_N
+    assign uio_out[2] = SPI_MOSI_TOP;    // SPI2 MOSI
+    assign uio_out[3] = SPI_SCLK_TOP;    // SPI2 SCLK
+    assign uio_out[4] = SPI_CS_GPIO2_TOP;    // SPI2 CS_N
     assign uio_out[7:5] = 3'b000;
 
     // uio_oe (1 = output)
@@ -70,21 +70,21 @@ module tt_um_prem_pipeline_test (
         .reset        (reset),
 
         // Bootloader UART
-        .rx           (uart1_rx),
-        .tx           (uart1_tx),
+        .rx           (BOOT_UART1_RX),
+        .tx           (BOOT_UART1_TX),
 
         // Peripheral UART
-        .UART_tx      (uart2_tx),
-        .UART_rx_line (uart2_rx),
+        .UART_tx      (PER_UART2_TX),
+        .UART_rx_line (PER_UART2_RX),
 
-        // SPI2
-        .spi2_sclk    (spi2_sclk_w),
-        .spi2_mosi    (spi2_mosi_w),
-        .spi2_miso    (spi2_miso_w),
-        .spi2_cs_n    (spi2_cs_n_w),
+        // SPI
+        .SPI_SCLK    (SPI_SCLK_TOP),
+        .SPI_MOSI    (SPI_MOSI_TOP),
+        .SPI_MISO    (SPI_MISO_TOP),
+        .SPI_CS_GPIO2 (SPI_CS_GPIO2_TOP),
 
-        // SPI1 CS (from GPIO1)
-        .spi1_cs_n    (spi1_cs_n_w)
+        // GPIO1
+        .Gpio1    (GPIO1_TOP)
     );
 
 endmodule

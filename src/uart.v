@@ -1,10 +1,6 @@
 `default_nettype none
 // ============================================================
 //  uart_Tx_fixed — Bootloader UART (TX + RX, oversampled x16)
-//
-//  OS_HALF removed — RX_MAJ replaces it entirely.
-//  All localparams use two-step integer→slice truncation
-//  (Verilog-2001 compatible, no SystemVerilog casts).
 // ============================================================
 module uart_Tx_fixed #(
     parameter CLK_FREQ   = 25_000_000,

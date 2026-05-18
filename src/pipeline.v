@@ -2,35 +2,6 @@
 
 // ============================================================
 //  pipeline.v — Final version for GF180MCU Tiny Tapeout
-//
-//  Key decisions based on STA report:
-//
-//  ✓ CLOCK: 50 MHz (20 ns). Worst path = 12.90 ns at 25 MHz
-//    corner → 7.1 ns slack at 50 MHz — sufficient.
-//
-//  ✓ NO FAKE CLOCK GATING: previous "wire clk_gated = clk"
-//    created no real gating but confused CTS, causing the
-//    large fanout violations. All modules now use clk directly.
-//    TT's RUN_CTS=1 builds the real clock tree.
-//
-//  ✓ NO MANUAL CLOCK BUFFERS: do not insert clkbuf cells in
-//    RTL for a TT project. CTS is handled by OpenROAD/LibreLane
-//    from the config.json clock definition. Manual RTL buffers
-//    fight the CTS algorithm and worsen fanout.
-//
-//  ✓ CLOCK ENABLE STYLE (already correct in sub-modules):
-//    pc_register:  if (!stallF) PCF_out <= PCF_in;
-//    IF_ID_stage:  if (!stallD) ...
-//    This is the correct approach — NOT gated clocks.
-//
-//  ✓ IMEM DEPTH=64: matches bootloader 6-bit address width.
-//
-//  ✓ spi2_pending_w fed to gpio2 (not floating).
-//
-//  ✓ CLK_FREQ=40_000_000 matches 40 MHz clock.
-//
-//  ✓ Hazard_Unit uses flat boolean expressions (fixes the
-//    OR4→OR4→OR4 cascade that was the critical path).
 // ============================================================
 
 module pipeline (
@@ -40,11 +11,11 @@ module pipeline (
     output wire tx,
     output wire UART_tx,
     input  wire UART_rx_line,
-    output wire spi1_cs_n,
-    output wire spi2_sclk,
-    output wire spi2_mosi,
-    input  wire spi2_miso,
-    output wire spi2_cs_n
+    output wire Gpio1,
+    output wire SPI_SCLK,
+    output wire SPI_MOSI,
+    input  wire SPI_MISO,
+    output wire SPI_CS_GPIO2
 );
     // =========================================================
     // PIPELINE WIRES
@@ -366,7 +337,7 @@ module pipeline (
     // Peripheral UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(8)
+        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_inst0 (
         .clk(clk), .reset(reset),
         .tx_Start(UART_tx_start_w),
@@ -389,9 +360,9 @@ module pipeline (
         .rx_data(spi2_rx_data_w),
         .busy(spi2_busy_w),
         .done(spi2_done_w),
-        .sclk(spi2_sclk),
-        .mosi(spi2_mosi),
-        .miso(spi2_miso));
+        .sclk(SPI_SCLK),
+        .mosi(SPI_MOSI),
+        .miso(SPI_MISO));
 
     // =========================================================
     // GPIO1 → SPI1 CS_N
@@ -402,7 +373,7 @@ module pipeline (
         .reset(reset),
         .wr_en1(gpio1_wr_en_w), 
         .wdata1(gpio1_wdata_w),
-        .gpio_out1(spi1_cs_n));
+        .gpio_out1(Gpio1));
 
     // =========================================================
     // GPIO2 → SPI2 CS_N
@@ -413,7 +384,7 @@ module pipeline (
         .wr_en2(gpio2_wr_en_w), .wdata2(gpio2_wdata_w),
         .spi_busy(spi2_busy_w),
         .spi_pending(spi2_pending_w),
-        .gpio_out2(spi2_cs_n));
+        .gpio_out2(SPI_CS_GPIO2));
 
 endmodule
 

@@ -2,12 +2,6 @@
 
 // ============================================================
 //  imm — Immediate generator
-//
-//  instruction[6:0] (opcode) is architecturally unused —
-//  ImmSrc already encodes the format so the opcode bits are
-//  redundant here. Suppressed with an internal wire that
-//  consumes the bits cleanly (Verilog-2001 compatible —
-//  port-level pragmas are not supported in Verilog-2001).
 // ============================================================
 module imm (
     input  wire [2:0]  ImmSrc,

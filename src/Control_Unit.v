@@ -2,19 +2,6 @@
 
 // =============================================================================
 // Control.v
-//
-// Bug fixes:
-//   LUI  (0110111): rd = imm (not rs1+imm).
-//                   ALUSrcA=2'b10 forces SrcA=0 in pipeline.
-//                   ALUControl=4'b1010 (passB) outputs ScrB directly.
-//   AUIPC(0010111): rd = PC + imm (not rs1+imm).
-//                   ALUSrcA=2'b01 forces SrcA=PC_E in pipeline.
-//                   ALUType=2'b00 + ALUControl=ADD performs PC+imm.
-//
-// New output: ALUSrcA [1:0]
-//   2'b00 = SrcA from forwarding mux (RD1) — all normal instructions
-//   2'b01 = SrcA = PC_E                    — AUIPC
-//   2'b10 = SrcA = 32'b0                   — LUI
 // =============================================================================
 
 module Control (

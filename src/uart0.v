@@ -3,7 +3,7 @@
 module uart_Tx_fixed0 #(
     parameter CLK_FREQ   = 25_000_000,
     parameter BAUD_RATE  = 115_200,
-    parameter OVERSAMPLE = 8
+    parameter OVERSAMPLE = 16
 )(
     input  wire        clk,
     input  wire        reset,

@@ -2,10 +2,6 @@
 
 // =============================================================================
 // EX_stage.v — ID/EX pipeline latch
-//
-// Added: ALUSrcA_in [1:0] / ALUSrcA_out [1:0]
-//   Passes the new Control.ALUSrcA signal through the latch so pipeline.v
-//   can select SrcA correctly for LUI (force 0) and AUIPC (force PC_E).
 // =============================================================================
 
 module EX_stage (
