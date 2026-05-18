@@ -17,7 +17,7 @@ module uart_bootloader (
     output reg         stall_pro
 );
 
-    localparam [31:0] SENTINEL       = 32'hDEADBEEF;
+    localparam [31:0] SENTINEL       = 32'hBAADF00D;
     localparam [7:0]  HANDSHAKE_BYTE = 8'h25;
     localparam [7:0]  ACK            = 8'h55;
     localparam [7:0]  NACK           = 8'hFF;
