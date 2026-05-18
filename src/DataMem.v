@@ -25,7 +25,7 @@ module DataMem (
     input  wire        spi2_busy,
     input  wire        spi2_done,
 
-    // GPIO
+    // GPIO (WRITE ONLY)
     output reg         gpio1_wr_en,
     output reg         gpio1_wdata,
     output reg         gpio2_wr_en,
@@ -33,36 +33,36 @@ module DataMem (
 );
 
     // =========================================================
-    // FAST ADDRESS DECODE (KEY OPTIMIZATION)
+    // FAST ADDRESS DECODE
     // =========================================================
-    wire _unused_addr = |aluAddress_in[27:4];
     wire [3:0] base = aluAddress_in[31:28];
     wire [3:0] off  = aluAddress_in[3:0];
 
-    wire sel_uart = (base == 4'h1);
-    wire sel_spi   = (base == 4'h4);
-    wire sel_gpio  = (base == 4'h3);
+    wire is_uart = (base == 4'h1);
+    wire is_spi  = (base == 4'h4);
+    wire is_gpio = (base == 4'h3);
 
-    wire sel_uart_tx   = sel_uart && (off == 4'h0);
-    wire sel_uart_rx   = sel_uart && (off == 4'h4);
-    wire sel_uart_txst = sel_uart && (off == 4'h8);
-    wire sel_uart_rxst = sel_uart && (off == 4'hC);
+    // One-hot style selects for better synthesis
+    wire sel_uart_tx   = is_uart & (off == 4'h0);
+    wire sel_uart_rx   = is_uart & (off == 4'h4);
+    wire sel_uart_txst = is_uart & (off == 4'h8);
+    wire sel_uart_rxst = is_uart & (off == 4'hC);
 
-    wire sel_spi_tx    = sel_spi   && (off == 4'h0);
-    wire sel_spi_txst  = sel_spi   && (off == 4'h4);
-    wire sel_spi_rx    = sel_spi   && (off == 4'h8);
-    wire sel_spi_rxst  = sel_spi   && (off == 4'hC);
+    wire sel_spi_tx    = is_spi  & (off == 4'h0);
+    wire sel_spi_txst  = is_spi  & (off == 4'h4);
+    wire sel_spi_rx    = is_spi  & (off == 4'h8);
+    wire sel_spi_rxst  = is_spi  & (off == 4'hC);
 
-    wire sel_gpio1     = sel_gpio  && (off == 4'h0);
-    wire sel_gpio2     = sel_gpio  && (off == 4'h4);
+    wire sel_gpio1_wr  = is_gpio & (off == 4'h0) & memwriteM_in;
+    wire sel_gpio2_wr  = is_gpio & (off == 4'h4) & memwriteM_in;
 
     // =========================================================
     // UART TX
     // =========================================================
     reg [7:0] uart_tx_reg;
-    reg uart_tx_pending;
+    reg       uart_tx_pending;
 
-    wire uart_tx_wr = memwriteM_in && sel_uart_tx && !uart_tx_pending;
+    wire uart_tx_wr = memwriteM_in & sel_uart_tx & ~uart_tx_pending;
 
     always @(posedge clk) begin
         if (reset) begin
@@ -87,29 +87,36 @@ module DataMem (
     end
 
     // =========================================================
-    // UART RX (registered input reduces timing load)
+    // UART RX
     // =========================================================
-    reg uart_rx_ready_r;
+    reg uart_rx_ready_r, uart_rx_ready_rr;
     reg [7:0] uart_rx_reg;
     reg uart_rx_valid;
 
-    wire uart_rx_rd = !memwriteM_in && sel_uart_rx && uart_rx_valid;
+    wire uart_rx_ready_rise = uart_rx_ready_r & ~uart_rx_ready_rr;
+    wire uart_rx_rd = ~memwriteM_in & sel_uart_rx & uart_rx_valid;
 
     always @(posedge clk) begin
         if (reset) begin
-            uart_rx_ready_r <= 1'b0;
-            uart_rx_reg     <= 8'd0;
-            uart_rx_valid   <= 1'b0;
+            uart_rx_ready_r  <= 1'b0;
+            uart_rx_ready_rr <= 1'b0;
         end else begin
-            uart_rx_ready_r <= uart_rx_ready;
+            uart_rx_ready_rr <= uart_rx_ready_r;
+            uart_rx_ready_r  <= uart_rx_ready;
+        end
+    end
 
-            if (uart_rx_ready_r) begin
+    always @(posedge clk) begin
+        if (reset) begin
+            uart_rx_reg   <= 8'd0;
+            uart_rx_valid <= 1'b0;
+        end else begin
+            if (uart_rx_ready_rise && !uart_rx_valid) begin
                 uart_rx_reg   <= uart_in_data;
                 uart_rx_valid <= 1'b1;
-            end
-
-            if (uart_rx_rd)
+            end else if (uart_rx_rd) begin
                 uart_rx_valid <= 1'b0;
+            end
         end
     end
 
@@ -119,7 +126,7 @@ module DataMem (
     reg spi2_pending;
     reg [7:0] spi2_tx_buf;
 
-    wire spi2_tx_wr = memwriteM_in && sel_spi_tx && !spi2_pending;
+    wire spi2_tx_wr = memwriteM_in & sel_spi_tx & ~spi2_pending;
 
     assign spi2_pending_out = spi2_pending;
 
@@ -137,7 +144,7 @@ module DataMem (
                 spi2_pending <= 1'b1;
             end
 
-            if (spi2_pending && !spi2_busy && !spi2_done) begin
+            if (spi2_pending && !spi2_busy) begin
                 spi2_tx_data <= spi2_tx_buf;
                 spi2_start   <= 1'b1;
                 spi2_pending <= 1'b0;
@@ -153,23 +160,24 @@ module DataMem (
     reg spi2_done_r;
 
     wire spi2_done_rise = spi2_done & ~spi2_done_r;
-    wire spi2_rx_rd = !memwriteM_in && sel_spi_rx && spi2_rx_valid;
+    wire spi2_rx_rd = ~memwriteM_in & sel_spi_rx & spi2_rx_valid;
+
+    always @(posedge clk) begin
+        if (reset) spi2_done_r <= 1'b0;
+        else       spi2_done_r <= spi2_done;
+    end
 
     always @(posedge clk) begin
         if (reset) begin
-            spi2_done_r   <= 1'b0;
             spi2_rx_reg   <= 8'd0;
             spi2_rx_valid <= 1'b0;
         end else begin
-            spi2_done_r <= spi2_done;
-
             if (spi2_done_rise) begin
                 spi2_rx_reg   <= spi2_rx_data;
                 spi2_rx_valid <= 1'b1;
-            end
-
-            if (spi2_rx_rd)
+            end else if (spi2_rx_rd) begin
                 spi2_rx_valid <= 1'b0;
+            end
         end
     end
 
@@ -178,50 +186,42 @@ module DataMem (
     // =========================================================
     always @(posedge clk) begin
         if (reset) begin
-            gpio1_wr_en <= 1'b0;
-            gpio1_wdata <= 1'b1;
+            gpio1_wr_en  <= 1'b0;
+            gpio1_wdata  <= 1'b1;
         end else begin
-            gpio1_wr_en <= 1'b0;
-            if (memwriteM_in && sel_gpio1) begin
+            gpio1_wr_en <= sel_gpio1_wr;
+            if (sel_gpio1_wr)
                 gpio1_wdata <= DataWriteM_in[0];
-                gpio1_wr_en <= 1'b1;
-            end
         end
     end
 
     always @(posedge clk) begin
         if (reset) begin
-            gpio2_wr_en <= 1'b0;
-            gpio2_wdata <= 1'b1;
+            gpio2_wr_en  <= 1'b0;
+            gpio2_wdata  <= 1'b1;
         end else begin
-            gpio2_wr_en <= 1'b0;
-            if (memwriteM_in && sel_gpio2) begin
+            gpio2_wr_en <= sel_gpio2_wr;
+            if (sel_gpio2_wr)
                 gpio2_wdata <= DataWriteM_in[0];
-                gpio2_wr_en <= 1'b1;
-            end
         end
     end
 
     // =========================================================
-    // READ MUX (FLAT + FAST)
+    // OPTIMIZED COMBINATORIAL READ MUX
     // =========================================================
     always @(*) begin
         DataMem_out = 32'd0;
 
         if (!memwriteM_in) begin
-            if (sel_uart_tx)   DataMem_out = {24'd0, uart_tx_reg};
+            if      (sel_uart_tx)   DataMem_out = {24'd0, uart_tx_reg};
             else if (sel_uart_rx)   DataMem_out = {24'd0, uart_rx_reg};
             else if (sel_spi_tx)    DataMem_out = {24'd0, spi2_tx_buf};
             else if (sel_spi_rx)    DataMem_out = {24'd0, spi2_rx_reg};
-            else if (sel_gpio1)     DataMem_out = {31'd0, gpio1_wdata};
-            else if (sel_gpio2)     DataMem_out = {31'd0, gpio2_wdata};
-            else if (sel_uart_txst)  DataMem_out = {30'd0, uart_tx_busy, uart_tx_pending};
-            else if (sel_uart_rxst)  DataMem_out = {31'd0, uart_rx_valid};
-            else if (sel_spi_txst)   DataMem_out = {30'd0, spi2_pending, spi2_busy};
-            else if (sel_spi_rxst)   DataMem_out = {30'd0, 1'b0, spi2_rx_valid};
+            else if (sel_uart_txst) DataMem_out = {30'd0, uart_tx_busy, uart_tx_pending};
+            else if (sel_uart_rxst) DataMem_out = {31'd0, uart_rx_valid};
+            else if (sel_spi_txst)  DataMem_out = {30'd0, spi2_pending, spi2_busy};
+            else if (sel_spi_rxst)  DataMem_out = {30'd0, 1'b0, spi2_rx_valid};
         end
     end
 
 endmodule
-
-`default_nettype wire

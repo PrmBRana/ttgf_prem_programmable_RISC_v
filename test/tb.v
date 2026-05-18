@@ -67,8 +67,8 @@ module tb();
         spi2_miso    = 1'b1;   // SPI MISO idle high
     end
 
-    // 30 MHz clock
-    always #16.667 clk = ~clk;
+    // 25 MHz clock
+    always #20 clk = ~clk;
 
 `ifdef GL_TEST
     wire VPWR = 1'b1;
