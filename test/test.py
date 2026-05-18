@@ -27,7 +27,7 @@ async def test_uart_bootloader(dut):
   await ClockCycles(dut.clk, 100)
 
 
-  dut._log.info(f"Sending handshake command 0x25 at {get_sim_time('ns')} ns")
+  dut._log.info(f"Sending handshake command (UART1-Prorammable) 0x25 at {get_sim_time('ns')} ns")
   await uart_source.write([0x25])
 
 
@@ -136,7 +136,7 @@ async def spi_slave_full_duplex(dut, slave_tx_data):
         dut._log.info(
             f"[{idx}] (SPI) MOSI=0x{rx_byte:02X} ('{byte_to_ascii(rx_byte)}') "
         f"| (SPI) MISO=0x{tx_byte:02X} ('{byte_to_ascii(tx_byte)}') "
-        f"| Shared UART tx=0x{tx_byte:02X} ('{byte_to_ascii(tx_byte)}')"
+        f"| Peripheral UART2 tx=0x{tx_byte:02X} ('{byte_to_ascii(tx_byte)}')"
         )
 
         idx += 1
@@ -165,7 +165,7 @@ async def spi_debug_monitor(dut):
 async def uart_spi_test(dut):
 
     # Clock
-    cocotb.start_soon(Clock(dut.clk, 31.25, units="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 33.33, units="ns").start())
 
     # Reset
     dut.rst_n.value = 1
