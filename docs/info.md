@@ -13,7 +13,7 @@ You can also include images in this folder and reference them in the markdown. E
 
 This project implements a compact 32-bit RISC-V processor with a five-stage pipeline architecture consisting of Instruction Fetch (IF), Decode (ID), Execute (EX), Memory (MEM), and Write-Back (WB) stages. The pipelined design allows multiple instructions to be processed concurrently, improving throughput while maintaining a small hardware footprint.
 
-# The system includes two UART interfaces, one SPI interface, and two GPIOs:
+### The system includes two UART interfaces, one SPI interface, and two GPIOs:
 
 1. UART1 is used as a bootloader interface for program loading  
 2. UART2 is used as a general-purpose communication interface during execution  
@@ -29,7 +29,7 @@ In addition to UART, the design includes an SPI master interface for communicati
 
 Peripherals are controlled using a simple polling mechanism instead of interrupts. The CPU continuously reads status registers before performing read/write operations.
 
-# UART Polling Example
+### UART Polling Example
 1. UART_TX (0x1000_0000) → write transmit byte
 2. UART_RX (0x1000_0004) → read received byte
 3. UART_TX_STATUS (0x1000_0008) → indicates transmit ready
@@ -67,7 +67,7 @@ For UART testing, the bootloader interface (UART1) is used to send a sequence of
 
 For SPI testing, an external SPI master or testbench drives the SCLK, MOSI, and CS signals while observing the MISO output from the processor. Correct timing (Mode 0) and data integrity are verified by comparing transmitted and received byte streams.
 
-# Functional validation includes verifying:
+### Functional validation includes verifying:
 
 1. Correct instruction execution
 2. Proper pipeline operation
@@ -75,7 +75,7 @@ For SPI testing, an external SPI master or testbench drives the SCLK, MOSI, and 
 4. UART bootloading sequence
 5. SPI data transfer timing and integrity
 
-# Memory setup
+### Memory setup
 The following assembly demonstrates SPI communication using memory-mapped polling, where the CPU continuously checks status registers before reading or writing data.
 
 lui   x10, 0x40000      # SPI base tx
@@ -97,7 +97,7 @@ addi  x22, x0, 3        # UART mask
 
 sw    x16, 0(x14)       # CS LOW
 
-# send first byte
+### send first byte
 addi  x7, x0, 0xAA (dummy data)
 
 loop:
@@ -124,7 +124,7 @@ release_cs:
     sw    x3, 0(x14)          # CS HIGH
     ecall
 
-# Decoded Machine Code
+### Decoded Machine Code
 
 This is the corresponding compiled RISC-V instruction sequence:
 
@@ -157,7 +157,7 @@ This is the corresponding compiled RISC-V instruction sequence:
            0x00000073,
            0xBAADF00D // sentinel valuse (last always)
 
-# This sentinel  value detected by the uart bootloader then stop and start execute the processor.
+### This sentinel  value detected by the uart bootloader then stop and start execute the processor.
 
 
 ## External hardware
