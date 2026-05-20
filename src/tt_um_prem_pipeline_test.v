@@ -19,16 +19,18 @@ module tt_um_prem_pipeline_test (
         1'b0,
         ui_in[7:2],
         uio_in[7:3],   // only uio[2] used for SPI MISO
+        uio_in[1:0],
         ena
     };
     /* verilator lint_on UNUSEDSIGNAL */
 
     wire reset = ~rst_n;
 
-    // ── UART signals ─────────────────────────────────────
+    // ── UART signals Receiver ─────────────────────────────────────
     wire BOOT_UART1_RX = ui_in[0];
     wire PER_UART2_RX  = ui_in[1];
 
+    //Transmitter
     wire BOOT_UART1_TX;
     wire PER_UART2_TX;
 
