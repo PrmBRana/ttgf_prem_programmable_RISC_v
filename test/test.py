@@ -164,15 +164,25 @@ async def spi_debug_monitor(dut):
 @cocotb.test()
 async def uart_spi_test(dut):
 
-    # Clock
+    # Clock (40ns means 25MHz frequency)
     cocotb.start_soon(Clock(dut.clk, 40, units="ns").start())
 
     # Reset
+    # initialize signals BEFORE reset
+    # dut.rx.value = 1
+    # dut.UART_rx_line.value = 1
+    # dut.spi2_miso.value = 0
+
+    #reset property
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 10)
+
+    # release reset ON clock edge
+    await RisingEdge(dut.clk)
     dut.rst_n.value = 1
-    dut.spi2_miso.value = 0
+
+    # allow system to stabilize
     await ClockCycles(dut.clk, 20)
-    dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 50)
 # ===========================================================
 # SPI SLAVE TEST
 # ===========================================================
