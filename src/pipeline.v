@@ -352,7 +352,7 @@ module pipeline (
     // SPI2 master
     // =========================================================
     spi_master #(
-        .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(8)
+        .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(3)
     ) spi2_inst (
         .clk(clk), .reset(reset),
         .start(spi2_start_w),

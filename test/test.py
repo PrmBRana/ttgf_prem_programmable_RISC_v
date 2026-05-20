@@ -181,7 +181,7 @@ async def uart_spi_test(dut):
 
     # SPI response
     # Use triple quotes to handle internal quotes like "Munal"
-    text_data = """Namaste everyone from Nepal! Tiny Tapeout enables low-cost custom chip design by combining multiple open-source projects into one silicon chip, great for students and hobbyists***S**M**I**L**E************"""
+    text_data = """Namaste everyone from Nepal! Tiny Tapeout enables low-cost custom chip design by combining multiple open-source projects into one silicon chip, great for students and hobbyists********S**M**I**L**E******A**L**W**A**Y**s*******"""
     
     slave_tx = [ord(c) for c in text_data]
 
