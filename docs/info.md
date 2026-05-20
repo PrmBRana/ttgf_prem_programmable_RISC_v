@@ -194,7 +194,7 @@ The following assembly routine demonstrates a practical I/O sequence:
 
 ### Compiled Machine Code
 
-Corresponding 32-bit hexadecimal instruction sequence:
+Corresponding 32-bit hexadecimal instruction sequence: (link:https://riscvasm.lucasteske.dev/#)
 
 ```
 0x40000537,  # lui   x10, 0x40000
