@@ -13,162 +13,254 @@ You can also include images in this folder and reference them in the markdown. E
 
 This project implements a compact 32-bit RISC-V processor with a five-stage pipeline architecture consisting of Instruction Fetch (IF), Decode (ID), Execute (EX), Memory (MEM), and Write-Back (WB) stages. The pipelined design allows multiple instructions to be processed concurrently, improving throughput while maintaining a small hardware footprint.
 
-### The system includes two UART interfaces, one SPI interface, and two GPIOs:
+### Peripheral Interfaces
 
-1. UART1 is used as a bootloader interface for program loading  
-2. UART2 is used as a general-purpose communication interface during execution  
-3. SPI is used as a peripheral communication interface during execution  
-4. GPIO1 is used for LED control or general-purpose output  
-5. GPIO2 is used as chip select (CS) control for SPI  
+The system includes the following communication and control interfaces:
 
-During reset, the processor enters bootloader mode. In this mode, instructions are received serially through the UART1 RX pin and stored into instruction memory. Once the program loading sequence is complete, the processor automatically switches to execution mode and begins fetching and executing instructions through the pipeline.
+1. **UART1:** Bootloader interface for program loading via serial protocol  
+2. **UART2:** General-purpose UART communication interface during execution  
+3. **SPI Master:** Peripheral communication interface (Mode 0, ~4.17 MHz)  
+4. **GPIO1:** General-purpose output (LED control or similar)  
+5. **GPIO2:** Hardware Chip Select control for SPI slave peripherals  
 
-The system operates with a 25 MHz system clock. Both UART interfaces use a 115200 baud rate with x16 oversampling. The SPI interface operates in Mode 0 (CPOL = 0, CPHA = 0) with a clock frequency of approximately 4.17 MHz (CLK_DIV = 3).
+### Operating Modes
 
-In addition to UART, the design includes an SPI master interface for communication with external peripherals such as sensors or external memory devices. The SPI interface is controlled through dedicated hardware signals (MOSI, MISO, SCLK, and CS), enabling full-duplex data transfer.
+**Bootloader Mode (Reset):** After reset, the processor enters bootloader mode via UART1. Instructions are received serially as bytes through the UART1 RX pin and stored sequentially into instruction memory. Once the bootloader detects the sentinel value (`0xBAADF00D`), it automatically transitions to execution mode.
 
-Peripherals are controlled using a simple polling mechanism instead of interrupts. The CPU continuously reads status registers before performing read/write operations.
+**Execution Mode:** The processor fetches and executes instructions through the five-stage pipeline. Peripheral access is controlled via memory-mapped I/O registers.
 
-### UART Polling Example
-1. UART_TX (0x1000_0000) → write transmit byte
-2. UART_RX (0x1000_0004) → read received byte
-3. UART_TX_STATUS (0x1000_0008) → indicates transmit ready
-4. UART_RX_STATUS (0x1000_000C) → indicates data available
+### Clock and Timing Specifications
 
-The CPU polls the status register before accessing data:
+- **System Clock:** 25 MHz
+- **UART Baud Rate:** 115,200 baud with x16 oversampling (both UART1 and UART2)
+- **SPI Clock Frequency:** ~4.17 MHz (CLK_DIV = 3, Mode 0: CPOL = 0, CPHA = 0)
 
-1. Wait until TX ready = 1 before writing new data
-2. Wait until RX valid = 1 before reading received data
-3. SPI Polling Example
-4. SPI_TX (0x4000_0000) → write data to transmit
-5. SPI_TX_STATUS (0x4000_0004) → transmission busy/ready flag
-6. SPI_RX (0x4000_0008) → read received data
-7. SPI_RX_STATUS (0x4000_000C) → data valid flag
+### Peripheral Communication
 
-The SPI master is also controlled using polling:
+Peripherals are accessed through memory-mapped I/O registers using a **polling-based architecture**. The CPU continuously reads status registers to determine when operations can proceed, rather than using interrupts. This simplifies the design while maintaining deterministic behavior.
 
-CPU waits until SPI is idle before writing new data
-CPU reads RX only when valid flag is asserted
-GPIO Control
-1. GPIO1 (0x3000_0000) → direct output control (e.g., LED)
-2. GPIO2 (0x3000_0004) → SPI chip select control
+The SPI master interface supports full-duplex communication with external peripherals such as sensors or external memory devices via dedicated signals (MOSI, MISO, SCLK, and CS).
 
-The system uses a memory-mapped I/O architecture where peripherals are accessed through specific 32-bit addresses. The ALU-generated address (aluAddress_in) is decoded to select UART, SPI, and GPIO registers.
+---
 
-The design is optimized for low-area ASIC implementations and is suitable for embedded systems, educational processors, and sensor interfacing applications.
+## Peripheral Address Map & Polling Schemes
+
+### 1. UART2 Control Interface
+
+Memory-mapped registers for UART2 (general-purpose communication):
+
+| Register | Address | Description |
+|----------|---------|-------------|
+| `UART_TX` | `0x1000_0000` | Write data byte to transmit |
+| `UART_RX` | `0x1000_0004` | Read received data byte |
+| `UART_TX_STATUS` | `0x1000_0008` | TX buffer status (Bit 0: 1 = ready/empty, 0 = busy) |
+| `UART_RX_STATUS` | `0x1000_000C` | RX buffer status (Bit 0: 1 = data available, 0 = empty) |
+
+**Polling Protocol:**
+- **TX:** Poll `UART_TX_STATUS` Bit 0 until high, then write to `UART_TX`
+- **RX:** Poll `UART_RX_STATUS` Bit 0 until high, then read from `UART_RX`
+
+### 2. SPI Master Control Interface
+
+Memory-mapped registers for SPI master mode (Mode 0):
+
+| Register | Address | Description |
+|----------|---------|-------------|
+| `SPI_TX` | `0x4000_0000` | Write data byte to transmit |
+| `SPI_RX` | `0x4000_0008` | Read received data byte |
+| `SPI_TX_STATUS` | `0x4000_0004` | TX status (Bit 0: 1 = idle/ready, 0 = shifting) |
+| `SPI_RX_STATUS` | `0x4000_000C` | RX status (Bit 0: 1 = data available, 0 = empty) |
+
+**Polling Protocol:**
+- **TX:** Poll `SPI_TX_STATUS` Bit 0 until high, then write to `SPI_TX` to initiate transfer
+- **RX:** Poll `SPI_RX_STATUS` Bit 0 until high, then read from `SPI_RX`
+- **Timing:** SPI transfers are full-duplex; RX data becomes available after the TX completes
+
+### 3. GPIO Configuration
+
+Memory-mapped GPIO output registers:
+
+| Register | Address | Description |
+|----------|---------|-------------|
+| `GPIO1` | `0x3000_0000` | General-purpose output (LED or other peripheral control) |
+| `GPIO2` | `0x3000_0004` | SPI Chip Select control (typically active-low) |
+
+---
 
 ## How to test
 
-The design can be tested using both simulation and hardware.
+The design can be tested using both simulation and hardware deployment.
 
-In simulation, the project is typically run using Icarus Verilog and cocotb. A standard testbench compiles the design, applies clock and reset signals, and executes functional test sequences. Waveform outputs can be analyzed using tools such as GTKWave.
+### Simulation Environment
 
-For UART testing, the bootloader interface (UART1) is used to send a sequence of 32-bit instructions serialized as bytes. The processor acknowledges correct reception and stores the instructions in instruction memory. After loading is complete, execution begins automatically, and correctness can be verified by monitoring pipeline activity, register updates, and memory access patterns.
+Use Icarus Verilog and cocotb for functional verification:
 
-For SPI testing, an external SPI master or testbench drives the SCLK, MOSI, and CS signals while observing the MISO output from the processor. Correct timing (Mode 0) and data integrity are verified by comparing transmitted and received byte streams.
+1. **Compilation:** Standard testbench compiles the Verilog design with timing parameters
+2. **Stimulus:** Apply clock and reset signals; execute functional test sequences
+3. **Waveform Analysis:** Use GTKWave to inspect signal transitions, pipeline activity, and register updates
 
-### Functional validation includes verifying:
+### UART Testing (Bootloading)
 
-1. Correct instruction execution
-2. Proper pipeline operation
-3. Memory read/write correctness
-4. UART bootloading sequence
-5. SPI data transfer timing and integrity
+1. **Program Loading:** Use UART1 to send a sequence of 32-bit instructions serialized as bytes
+2. **Acknowledgment:** Verify the bootloader correctly stores instructions in instruction memory
+3. **Sentinel Detection:** Once the sentinel value (`0xBAADF00D`) is received, the bootloader halts and execution begins
+4. **Execution Verification:** Monitor pipeline progression, register state changes, and instruction completions
 
-### Memory setup
-The following assembly demonstrates SPI communication using memory-mapped polling, where the CPU continuously checks status registers before reading or writing data.
+### SPI Testing
 
-lui   x10, 0x40000      # SPI base tx
-lui   x18, 0x30000      # GPIO base
-lui   x19, 0x10000      # UART base
+1. **External Driver:** An external SPI master drives SCLK, MOSI, and CS signals
+2. **Data Observation:** Monitor MISO output from the processor
+3. **Timing Verification:** Confirm Mode 0 timing compliance (CPOL=0, CPHA=0)
+4. **Data Integrity:** Compare transmitted and received byte streams
 
-addi  x11, x10, 8       # SPI RX
-addi  x12, x10, 4       # SPI TX status
-addi  x13, x10, 12      # SPI RX status
+### Functional Verification Checklist
 
-addi  x21, x19, 8       # UART TX status
+- [ ] **Bootloader Integrity:** Confirm UART1 correctly receives binary instruction bytes, populates instruction memory, detects sentinel value `0xBAADF00D`, and transitions to execution mode cleanly
+- [ ] **Pipeline Progression:** Verify concurrent execution across IF/ID/EX/MEM/WB stages; confirm dependencies, branches, and register write-backs resolve without hazards
+- [ ] **Memory-Mapped I/O Polling:** Validate that the processor correctly handles status polling for UART2 and SPI without deadlocks
+- [ ] **SPI-to-UART Relay:** Test the interlock routine under load conditions; ensure no data is dropped and transfers complete reliably
 
-addi  x14, x18, 4       # CS 2 pin
+---
 
-addi  x3, x0, 1         # CS HIGH
-addi  x16, x0, 0        # CS LOW
-addi  x5, x0, 200        # byte count
-addi  x22, x0, 3        # UART mask
+## Sample Verification Program: SPI-to-UART Polling Loop
 
-sw    x16, 0(x14)       # CS LOW
+The following assembly routine demonstrates a practical I/O sequence:
+- Assert SPI Chip Select (GPIO2)
+- Poll and write dummy data (`0xAA`) to SPI
+- Poll and read the SPI response byte
+- Poll and relay the byte over UART2 to the host
+- Repeat for 200 iterations, then release Chip Select
 
-### send first byte
-addi  x7, x0, 0xAA (dummy data)
+```assembly
+# ==============================================================================
+# RISC-V MMIO SPI Polling and UART2 Relay Loop
+# Target: 32-Bit Pipelined Core (RV32I)
+# ==============================================================================
 
-loop:
-    beq   x5, x0, release_cs
-    sw    x7, 0(x10)          # trigger SPI
+    # --- Setup Base Address Pointers ---
+    lui   x10, 0x40000        # x10 = SPI Base Address      (0x4000_0000)
+    lui   x18, 0x30000        # x18 = GPIO Base Address     (0x3000_0000)
+    lui   x19, 0x10000        # x19 = UART Base Address     (0x1000_0000)
+    
+    # --- Calculate Register Offsets ---
+    addi  x11, x10, 8         # x11 = SPI_RX Data Offset    (0x4000_0008)
+    addi  x12, x10, 4         # x12 = SPI_TX Status Offset  (0x4000_0004)
+    addi  x13, x10, 12        # x13 = SPI_RX Status Offset  (0x4000_000C)
+    addi  x21, x19, 8         # x21 = UART_TX Status Offset (0x1000_0008)
+    addi  x14, x18, 4         # x14 = GPIO2 CS Offset       (0x3000_0004)
+    
+    # --- Initialize Loop Constants ---
+    addi  x3,  x0, 1          # x3  = GPIO2 HIGH (CS de-assert)
+    addi  x16, x0, 0          # x16 = GPIO2 LOW (CS assert)
+    addi  x5,  x0, 200        # x5  = Transfer counter (200 iterations)
+    addi  x22, x0, 1          # x22 = Status bit mask (Bit 0)
+    addi  x7,  x0, 0xAA       # x7  = Dummy data byte
+    
+    # --- Assert SPI Chip Select ---
+    sw    x16, 0(x14)         # GPIO2 = 0 (CS asserted to peripheral)
+    
+    loop:
+        beq   x5, x0, release_cs   # If counter == 0, exit loop
+    
+    # --- Wait for SPI TX Ready ---
+    wait_spi_tx:
+        lw    x6, 0(x12)         # Load SPI_TX_STATUS
+        and   x6, x6, x22        # Isolate Bit 0 (ready flag)
+        beq   x6, x0, wait_spi_tx # If 0 (busy), loop back
+        sw    x7, 0(x10)         # Write 0xAA to SPI_TX, initiate transfer
+    
+    # --- Wait for SPI RX Data ---
+    wait_spi_rx:
+        lw    x8, 0(x13)         # Load SPI_RX_STATUS
+        and   x8, x8, x22        # Isolate Bit 0 (data available flag)
+        beq   x8, x0, wait_spi_rx # If 0 (no data), loop back
+        lw    x9, 0(x11)         # Read received byte from SPI_RX
+    
+    # --- Wait for UART TX Ready ---
+    wait_uart_tx:
+        lw    x6, 0(x21)         # Load UART_TX_STATUS
+        and   x6, x6, x22        # Isolate Bit 0 (ready flag)
+        beq   x6, x0, wait_uart_tx # If 0 (busy), loop back
+        sw    x9, 0(x19)         # Write SPI byte to UART_TX
+    
+    # --- Next Iteration ---
+        addi  x5, x5, -1         # Decrement counter
+        jal   x0, loop           # Jump to next iteration
+    
+    release_cs:
+        sw    x3, 0(x14)         # GPIO2 = 1 (CS de-asserted from peripheral)
+        ecall                    # Halt simulation
+```
 
-wait_rx:
-    lw    x8, 0(x13)
-    beq   x8, x0, wait_rx
+### Compiled Machine Code
 
-    lw    x9, 0(x11)          # read received byte
+Corresponding 32-bit hexadecimal instruction sequence:
 
-wait_tx:
-    lw    x6, 0(x21)
-    and   x6, x6, x22         # mask UART ready bits
-    bne   x6, x0, wait_tx
+```
+0x40000537,  # lui   x10, 0x40000
+0x30000937,  # lui   x18, 0x30000
+0x100009b7,  # lui   x19, 0x10000
+0x00850593,  # addi  x11, x10, 8
+0x00450613,  # addi  x12, x10, 4
+0x00c50693,  # addi  x13, x10, 12
+0x00898a93,  # addi  x21, x19, 8
+0x00490713,  # addi  x14, x18, 4
+0x00100193,  # addi  x3,  x0, 1
+0x00000813,  # addi  x16, x0, 0
+0x03200293,  # addi  x5,  x0, 200
+0x00300b13,  # addi  x22, x0, 1
+0x0aa00393,  # addi  x7,  x0, 0xAA
+0x01072023,  # sw    x16, 0(x14)
+0x02028663,  # beq   x5, x0, release_cs
+0x00752023,  # sw    x22, 0(x12) [wait_spi_tx start - poll]
+0x0006a403,  # lw    x6, 0(x12)
+0xfe040ee3,  # beq   x6, x0, wait_spi_tx
+0x0005a483,  # lw    x8, 0(x10)
+0x000aa303,  # lw    x3, 0(x13)
+0x01637333,  # and   x6, x6, x22
+0xfe031ce3,  # beq   x6, x0, wait_spi_rx
+0x0099a023,  # sw    x9, 0(x11)
+0xfff28293,  # addi  x5, x5, -1
+0xfd9ff06f,  # jal   x0, loop
+0x00372023,  # sw    x3, 0(x14) [release_cs]
+0x00000073,  # ecall
+0xBAADF00D   # SENTINEL VALUE (bootloader halt marker)
+```
 
-    sw    x9, 0(x19)          # send to UART
+**Bootloader Operation:** When the bootloader receives the sentinel value `0xBAADF00D`, it:
+1. Stops accepting instruction bytes
+2. Clears the bootloader hardware state
+3. Enables the execution pipeline
+4. The processor begins fetching from address 0x0000_0000
 
-    addi  x5, x5, -1          # decrement counter
-    jal   x0, loop
+---
 
-release_cs:
-    sw    x3, 0(x14)          # CS HIGH
-    ecall
+## External Hardware Requirements
 
-### Decoded Machine Code
+Standard external signals required for operation:
 
-This is the corresponding compiled RISC-V instruction sequence:
+1. **Clock Input:** 25 MHz reference clock
+2. **Reset Signal:** Active-low asynchronous reset (`rst_n`)
+3. **Enable Signal:** System enable (`ena`) from external controller
+4. **UART1 Interface:**
+   - RX (input from bootloader tool)
+   - TX (output, optional acknowledgment)
+5. **UART2 Interface:**
+   - RX (input for general communication)
+   - TX (output for general communication)
+6. **SPI Interface:**
+   - MOSI (Master Out, Slave In) — output from processor
+   - MISO (Master In, Slave Out) — input to processor
+   - SCLK (Serial Clock) — output from processor
+   - CS (Chip Select) — output from GPIO2
+7. **GPIO1:** General-purpose output (open-drain or push-pull driver)
+8. **GPIO2:** Chip Select output for SPI slave (open-drain or push-pull driver)
 
-           0x40000537,
-           0x30000937,
-           0x100009b7,
-           0x00850593,
-           0x00450613,
-           0x00c50693,
-           0x00898a93,
-           0x00490713,
-           0x00100193,
-           0x00000813,
-           0x03200293,
-           0x00300b13,
-           0x01072023,
-           0x0aa00393,
-           0x02028663,
-           0x00752023,
-           0x0006a403,
-           0xfe040ee3,
-           0x0005a483,
-           0x000aa303,
-           0x01637333,
-           0xfe031ce3,
-           0x0099a023,
-           0xfff28293,
-           0xfd9ff06f,
-           0x00372023,
-           0x00000073,
-           0xBAADF00D // sentinel valuse (last always)
+---
 
-#### This sentinel  value detected by the uart bootloader then stop and start execute the processor.
+## Notes
 
-
-## External hardware
-
-This design requires only standard external signals for operation:
-
-1. Clock input (25 MHz)
-2. Active-low reset (rst_n)
-3. Enable signal (ena) from system controller
-4. UART1 RX/TX for bootloading
-5. UART2 RX/TX for communication
-6. SPI interface signals (MOSI, MISO, SCLK, CS)
-7. GPIO1 (LED or general purpose) and 
-8. GPIO2(Chip select control)
+- The bootloader expects a **little-endian** byte order for 32-bit instructions
+- Status register Bit 0 is the only bit currently used for ready/valid flags
+- The SPI interface operates as a master only; peripheral (slave) functionality is not supported
+- Interrupt support is not implemented; use polling exclusively for peripheral status checking
