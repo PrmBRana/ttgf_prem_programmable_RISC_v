@@ -42,21 +42,34 @@ async def test_uart_bootloader(dut):
   if val == 0x55:
       dut._log.info("✓ SUCCESS: Handshake ACK received")
       instructions = [
-        0x10000537,
-        0x00450593,
-        0x00850613,
-        0x00c50693,
-        0x0006a183,
-        0x0011f193,
-        0xfe018ce3,
-        0x00058283,
-        0x00062303,
-        0x00337313,
-        0xfe031ce3,
-        0x00550023,
-        0xfe1ff06f,
-        0x00000073,
-        0xBAADF00D  
+            0x40000537,
+            0x30000937,
+            0x100009b7,
+            0x00850593,
+            0x00450613,
+            0x00c50693,
+            0x00898a93,
+            0x00490713,
+            0x00100193,
+            0x00000813,
+            0x0c800293,
+            0x00300b13,
+            0x01072023,
+            0x0aa00393,
+            0x02028663,
+            0x00752023,
+            0x0006a403,
+            0xfe040ee3,
+            0x0005a483,
+            0x000aa303,
+            0x01637333,
+            0xfe031ce3,
+            0x0099a023,
+            0xfff28293,
+            0xfd9ff06f,
+            0x00372023,
+            0x00000073,
+            0xBAADF00D  
       ]
       dut._log.info("Uploading instructions to processor...")
       for idx, inst in enumerate(instructions):
@@ -152,7 +165,7 @@ async def spi_debug_monitor(dut):
 async def uart_spi_test(dut):
 
     # Clock (40ns means 25MHz frequency)
-    cocotb.start_soon(Clock(dut.clk, 40, units="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 20, units="ns").start())
 
     # Reset
     # initialize signals BEFORE reset

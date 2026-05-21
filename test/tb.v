@@ -60,7 +60,7 @@ module tb();
     assign gpio1 = uio_out[4];
 
     // ── Clock ────────────────────────────────────
-    always #20 clk = ~clk;
+    always #10 clk = ~clk;
 
     // ── Reset + init ─────────────────────────────
     initial begin

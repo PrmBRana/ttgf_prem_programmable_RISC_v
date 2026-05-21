@@ -4,7 +4,7 @@ module spi_master #(
     parameter DATA_WIDTH = 8,
     parameter CPOL       = 0,
     parameter CPHA       = 0,
-    parameter CLK_DIV    = 4   // Increased a bit for safety
+    parameter CLK_DIV    = 8   // Increased a bit for safety
 )(
     input  wire                  clk,
     input  wire                  reset,
