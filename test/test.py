@@ -165,7 +165,7 @@ async def spi_debug_monitor(dut):
 async def uart_spi_test(dut):
 
     # Clock (40ns means 25MHz frequency)
-    cocotb.start_soon(Clock(dut.clk, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.clk, 40, units="ns").start())
 
     # Reset
     # initialize signals BEFORE reset

@@ -3,7 +3,7 @@
 //  uart_Tx_fixed — Bootloader UART (TX + RX, oversampled x16)
 // ============================================================
 module uart_Tx_fixed #(
-    parameter CLK_FREQ   = 50_000_000,
+    parameter CLK_FREQ   = 25_000_000,
     parameter BAUD_RATE  = 115_200,
     parameter OVERSAMPLE = 16
 )(

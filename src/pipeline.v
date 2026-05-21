@@ -103,7 +103,7 @@ module pipeline (
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_boot_inst (
         .clk(clk), .reset(reset),
         .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
@@ -337,7 +337,7 @@ module pipeline (
     // Peripheral UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(50_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
     ) uart_inst0 (
         .clk(clk), .reset(reset),
         .tx_Start(UART_tx_start_w),
@@ -352,7 +352,7 @@ module pipeline (
     // SPI2 master
     // =========================================================
     spi_master #(
-        .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(8)
+        .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(3)
     ) spi2_inst (
         .clk(clk), .reset(reset),
         .start(spi2_start_w),
