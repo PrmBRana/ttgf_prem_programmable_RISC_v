@@ -1,7 +1,7 @@
 `default_nettype none
 
 module instruction_mem #(
-    parameter integer DEPTH  = 64,
+    parameter integer DEPTH  = 128,
     parameter integer ADDR_W = $clog2(DEPTH)
 )(
     input  wire              clk,
