@@ -51,7 +51,7 @@ module pipeline (
     wire [1:0] ALUSrcAD_top, ALUSrcAE_top;
 
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [6:0] mem_addr;
+    wire [5:0] mem_addr;
     /* verilator lint_on  UNUSEDSIGNAL */
 
     wire [31:0] mem_wdata;
@@ -110,7 +110,7 @@ module pipeline (
         .tx(tx), .rx(rx),
         .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
 
-    uart_bootloader #(.ADDR_W(7)) uart_bootloader_inst (
+    uart_bootloader uart_bootloader_inst (
         .clk(clk), 
         .reset(reset),
         .rx_data(uart_rx_data_boot), 
@@ -122,7 +122,7 @@ module pipeline (
         .mem_wdata(mem_wdata),
         .stall_pro(stall_Pro));
 
-    instruction_mem #(.DEPTH(128), .ADDR_W(7)) imem (
+    instruction_mem #(.DEPTH(64), .ADDR_W(6)) imem (
         .clk(clk), 
         .we(Write_enable),
         .addr(mem_addr),
