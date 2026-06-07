@@ -1,5 +1,16 @@
 `default_nettype none
 
+// ============================================================
+//  MEM_stage.v — Fixed: funct3 passthrough added (FIX-B)
+//
+//  Change vs original:
+//    funct3M_in / funct3M_out added so load funct3 reaches
+//    DataMem for LB/LBU/LH/LHU sign/zero extension.
+//    WriteData promoted to 32-bit (was implicit 32-bit but
+//    only [7:0] was forwarded to DataMem — now full width
+//    preserved through the stage).
+// ============================================================
+
 module MEM_stage (
     input  wire        clk,
     input  wire        reset,
@@ -7,6 +18,7 @@ module MEM_stage (
     input  wire [31:0] WriteData_in,
     input  wire [4:0]  RdM_in,
     input  wire [31:0] PCPlus4M_in,
+    input  wire [2:0]  funct3M_in,      // NEW
     input  wire        RegWriteM_in,
     input  wire [1:0]  ResultSrcM_in,
     input  wire        MemWriteM_in,
@@ -14,6 +26,7 @@ module MEM_stage (
     output reg  [31:0] WriteData_out,
     output reg  [4:0]  RdM_out,
     output reg  [31:0] PCPlus4M_out,
+    output reg  [2:0]  funct3M_out,     // NEW
     output reg         RegWriteM_out,
     output reg  [1:0]  ResultSrcM_out,
     output reg         MemWriteM_out
@@ -24,6 +37,7 @@ module MEM_stage (
             WriteData_out  <= 32'b0;
             RdM_out        <= 5'b0;
             PCPlus4M_out   <= 32'b0;
+            funct3M_out    <= 3'b0;    // NEW
             RegWriteM_out  <= 1'b0;
             ResultSrcM_out <= 2'b0;
             MemWriteM_out  <= 1'b0;
@@ -32,6 +46,7 @@ module MEM_stage (
             WriteData_out  <= WriteData_in;
             RdM_out        <= RdM_in;
             PCPlus4M_out   <= PCPlus4M_in;
+            funct3M_out    <= funct3M_in;  // NEW
             RegWriteM_out  <= RegWriteM_in;
             ResultSrcM_out <= ResultSrcM_in;
             MemWriteM_out  <= MemWriteM_in;

@@ -1,7 +1,23 @@
 `default_nettype none
 
 // ============================================================
-//  pipeline.v — Final version for GF180MCU Tiny Tapeout
+//  pipeline.v — Critical-fixes version
+//
+//  FIXES vs submitted version:
+//
+//  FIX-A  JALR forwarding (Critical)
+//         base_addr_w now uses SrcA_fwd (forwarded RS1)
+//         instead of raw latch RD1E_top.
+//
+//  FIX-B  DataMem port widths (Critical + Moderate)
+//         DataWriteM_in promoted to 32-bit.
+//         funct3 plumbed through MEM stage to DataMem
+//         for correct LB/LBU/LH/LHU sign extension.
+//
+//  FIX-C  instruction_mem now synchronous read — no
+//         pipeline.v change needed; absorbed by IF/ID latch.
+//
+//  No other structural changes.
 // ============================================================
 
 module pipeline (
@@ -30,10 +46,7 @@ module pipeline (
     wire [31:0] Datamem_top, ALUResultW_top, ReadDataW_top;
     wire [31:0] PCPlus4W_top, ResultW_top;
     wire [31:0] PCTarget_top, ImmExtD_top, ImmExtE_top;
-
-    /* verilator lint_off UNUSEDSIGNAL */
     wire [31:0] WriteDataM_top;
-    /* verilator lint_on  UNUSEDSIGNAL */
 
     wire RegWrite_top, ALUSrcD_top, memWriteD_top;
     wire jumpD_top, BranchD_top, jumpRD_top;
@@ -50,10 +63,10 @@ module pipeline (
     wire [2:0] ImmSrc_top;
     wire [1:0] ALUSrcAD_top, ALUSrcAE_top;
 
-    /* verilator lint_off UNUSEDSIGNAL */
-    wire [5:0] mem_addr;
-    /* verilator lint_on  UNUSEDSIGNAL */
+    // FIX-B: funct3 through MEM stage for LB/LBU/LH/LHU
+    wire [2:0] funct3E_top, funct3M_top;
 
+    wire [5:0]  mem_addr;
     wire [31:0] mem_wdata;
     wire        stall_Pro, halt_top, Write_enable;
     wire [7:0]  uart_rx_data_boot, boot_tx_data;
@@ -65,10 +78,6 @@ module pipeline (
     wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
     reg  halt_latch;
 
-    // Synchronous reset — matches pc_register and all pipeline
-    // registers which also use synchronous reset.
-    // Using async reset here while sub-modules use sync reset
-    // causes Verilator SYNCASYNCNET on the shared reset net.
     always @(posedge clk) begin
         if (reset)            halt_latch <= 1'b0;
         else if (stall_Pro)   halt_latch <= 1'b0;
@@ -77,7 +86,6 @@ module pipeline (
 
     wire halt_final = halt_latch | halt_active;
 
-    // Flat boolean — avoids synthesiser generating OR chain
     wire StallF_net = ~PCSCR_top & (stall_Pro | StallF_top | halt_final);
     wire StallD_net = ~PCSCR_top & (stall_Pro | StallD_top | halt_final);
 
@@ -93,7 +101,6 @@ module pipeline (
         .PCBranch(PCTarget_top),
         .Mux3_PC(PC_top));
 
-    // clk used directly — CTS builds the tree, no manual buffers
     pc_register Register_top (
         .clk(clk), .reset(reset),
         .PCF_in(PC_top), .stallF(StallF_net),
@@ -111,19 +118,20 @@ module pipeline (
         .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
 
     uart_bootloader uart_bootloader_inst (
-        .clk(clk), 
+        .clk(clk),
         .reset(reset),
-        .rx_data(uart_rx_data_boot), 
+        .rx_data(uart_rx_data_boot),
         .rx_valid(uart_rx_ready_boot),
-        .tx_data(boot_tx_data),      
+        .tx_data(boot_tx_data),
         .tx_start(boot_tx_start),
         .mem_we(Write_enable),
         .mem_addr(mem_addr),
         .mem_wdata(mem_wdata),
         .stall_pro(stall_Pro));
 
+    // FIX-C: synchronous-read IMEM — latency absorbed by IF/ID latch
     instruction_mem #(.DEPTH(64), .ADDR_W(6)) imem (
-        .clk(clk), 
+        .clk(clk),
         .we(Write_enable),
         .addr(mem_addr),
         .wdata(mem_wdata),
@@ -134,15 +142,15 @@ module pipeline (
     // DECODE
     // =========================================================
     IF_ID_stage IF_DF_top (
-        .clk(clk), 
+        .clk(clk),
         .reset(reset),
-        .stallD(StallD_net), 
+        .stallD(StallD_net),
         .flushD(FlushD_top),
-        .PC_in(PCF), 
+        .PC_in(PCF),
         .PCplus4_in(PCPLUS4_top),
         .instruction_in(Instruction1_out),
         .instruction_out(INSTRUCTION),
-        .PCplus4_out(PCPLUS4D_TOP), 
+        .PCplus4_out(PCPLUS4D_TOP),
         .PC_out(PCD_top));
 
     wire [6:0]  INSTR_op   = INSTRUCTION[6:0];
@@ -189,6 +197,7 @@ module pipeline (
         .PCPlus4D_in(PCPLUS4D_TOP), .PC_D_in(PCD_top),
         .Rs1D_in(INSTR_rs1),        .Rs2D_in(INSTR_rs2),
         .RdD_in(INSTR_rd),
+        .funct3D_in(INSTR_f3),      // FIX-B: pass funct3
         .ALUControlD_in(ALUControlD_top),
         .ALUSrcD_in(ALUSrcD_top),   .ALUSrcA_in(ALUSrcAD_top),
         .RegWriteD_in(RegWrite_top),
@@ -201,6 +210,7 @@ module pipeline (
         .PCPlus4D_out(PCPlus4E_top),.PC_D_out(PCE_top),
         .Rs1D_out(Rs1E_top),        .Rs2D_out(Rs2E_top),
         .RdD_out(RdE_top),
+        .funct3D_out(funct3E_top),  // FIX-B
         .ALUControlD_out(ALUControlE_top),
         .ALUSrcD_out(ALUSrcE_top),  .ALUSrcA_out(ALUSrcAE_top),
         .RegWriteD_out(RegWriteE_top),
@@ -209,7 +219,7 @@ module pipeline (
         .BranchD_out(BranchE_top),  .JumpD_out(JumpE_top),
         .JumpR_out(JumpRE_top),     .ALUType_out(ALUTypE_top));
 
-    // ── Forwarding MUX A (with LUI/AUIPC SrcA override) ──────
+    // ── FIX-A: Forwarding MUX A — compute SrcA_fwd FIRST ────
     wire [31:0] SrcA_fwd =
         (ForwardAE_top == 2'b10) ? ALUResultM_top :
         (ForwardAE_top == 2'b01) ? ResultW_top    : RD1E_top;
@@ -219,7 +229,7 @@ module pipeline (
         (ALUSrcAE_top == 2'b01) ? PCE_top :    // AUIPC
                                    SrcA_fwd;
 
-    // ── Forwarding MUX B ──────────────────────────────────────
+    // ── Forwarding MUX B ─────────────────────────────────────
     assign outB_top =
         (ForwardBE_top == 2'b10) ? ALUResultM_top :
         (ForwardBE_top == 2'b01) ? ResultW_top    : RD2E_top;
@@ -227,7 +237,9 @@ module pipeline (
     assign ScrB_top = ALUSrcE_top ? ImmExtE_top : outB_top;
 
     // ── PC-target adder ───────────────────────────────────────
-    wire [31:0] base_addr_w = JumpRE_top ? RD1E_top : PCE_top;
+    // FIX-A: use SrcA_fwd (forwarded RS1) for JALR base address
+    wire [31:0] base_addr_w = JumpRE_top ? SrcA_fwd : PCE_top;
+
     assign PCTarget_top = JumpRE_top
         ? ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE)
         :  (base_addr_w + ImmExtE_top);
@@ -247,12 +259,14 @@ module pipeline (
         .ALUResult_in(ALUResultE_top),
         .WriteData_in(outB_top),
         .RdM_in(RdE_top),             .PCPlus4M_in(PCPlus4E_top),
+        .funct3M_in(funct3E_top),     // FIX-B
         .RegWriteM_in(RegWriteE_top),
         .ResultSrcM_in(ResultSrcE_top),
         .MemWriteM_in(MemWriteE_top),
         .ALUResult_out(ALUResultM_top),
         .WriteData_out(WriteDataM_top),
         .RdM_out(RdM_top),            .PCPlus4M_out(PCPlus4M_top),
+        .funct3M_out(funct3M_top),    // FIX-B
         .RegWriteM_out(RegWriteM_top),
         .ResultSrcM_out(ResultSrcM_top),
         .MemWriteM_out(MemWriteM_top));
@@ -286,7 +300,7 @@ module pipeline (
     Hazard_Unit hazard (
         .Rs1D(INSTR_rs1),    .Rs2D(INSTR_rs2),
         .Rs1E(Rs1E_top),     .Rs2E(Rs2E_top),
-        .RdE(RdE_top),      
+        .RdE(RdE_top),
         .PCSRCE(PCSCR_top),
         .ResultSrcE_in(ResultSrcE_top),
         .RdM(RdM_top),       .RdW(RdW_top),
@@ -301,7 +315,7 @@ module pipeline (
     // PERIPHERAL WIRES
     // =========================================================
     wire        spi2_start_w, spi2_busy_w, spi2_done_w;
-    wire        spi2_pending_w;           // fed to gpio2 — not floating
+    wire        spi2_pending_w;
     wire [7:0]  spi2_tx_data_w, spi2_rx_data_w;
     wire        gpio1_wr_en_w, gpio1_wdata_w;
     wire        gpio2_wr_en_w, gpio2_wdata_w;
@@ -309,13 +323,14 @@ module pipeline (
     wire [7:0]  UART_tx_data_w, UART_rx_data_w;
 
     // =========================================================
-    // DataMem
+    // DataMem — FIX-B: 32-bit write data + funct3
     // =========================================================
     DataMem databus_inst (
         .clk(clk), .reset(reset),
         .aluAddress_in(ALUResultM_top),
-        .DataWriteM_in(WriteDataM_top[7:0]),
+        .DataWriteM_in(WriteDataM_top),      // FIX-B: full 32-bit
         .memwriteM_in(MemWriteM_top),
+        .funct3(funct3M_top),                // FIX-B: for LB/LBU
         .DataMem_out(Datamem_top),
         .uart_tx_start(UART_tx_start_w),
         .uart_out_data(UART_tx_data_w),
@@ -365,20 +380,13 @@ module pipeline (
         .miso(SPI_MISO));
 
     // =========================================================
-    // GPIO1 → SPI1 CS_N
-    // gpio1 watches spi2 status so CS deasserts safely
+    // GPIO
     // =========================================================
     gpio1_io gpio1 (
-        .clk(clk), 
-        .reset(reset),
-        .wr_en1(gpio1_wr_en_w), 
-        .wdata1(gpio1_wdata_w),
+        .clk(clk), .reset(reset),
+        .wr_en1(gpio1_wr_en_w), .wdata1(gpio1_wdata_w),
         .gpio_out1(Gpio1));
 
-    // =========================================================
-    // GPIO2 → SPI2 CS_N
-    // spi2_pending_w consumed here — fixes floating net
-    // =========================================================
     gpio2_io gpio2 (
         .clk(clk), .reset(reset),
         .wr_en2(gpio2_wr_en_w), .wdata2(gpio2_wdata_w),
@@ -389,6 +397,3 @@ module pipeline (
 endmodule
 
 `default_nettype wire
-
-
-
