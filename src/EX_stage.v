@@ -1,13 +1,8 @@
 `default_nettype none
 
-// ============================================================
-//  EX_stage.v — Fixed: funct3 passthrough added (FIX-B)
-//
-//  Change vs original:
-//    funct3D_in / funct3D_out ports added so the load
-//    instruction's funct3 (LB/LBU/LH/LHU/LW) reaches
-//    DataMem in the MEM stage for correct sign extension.
-// ============================================================
+// =============================================================================
+// EX_stage.v — ID/EX pipeline latch
+// =============================================================================
 
 module EX_stage (
     input  wire        clk,
@@ -22,10 +17,9 @@ module EX_stage (
     input  wire [4:0]  Rs1D_in,
     input  wire [4:0]  Rs2D_in,
     input  wire [4:0]  RdD_in,
-    input  wire [2:0]  funct3D_in,      // NEW
     input  wire [3:0]  ALUControlD_in,
     input  wire        ALUSrcD_in,
-    input  wire [1:0]  ALUSrcA_in,
+    input  wire [1:0]  ALUSrcA_in,     // NEW
     input  wire        RegWriteD_in,
     input  wire [1:0]  ResultSrcD_in,
     input  wire        MemWriteD_in,
@@ -42,10 +36,9 @@ module EX_stage (
     output reg  [4:0]  Rs1D_out,
     output reg  [4:0]  Rs2D_out,
     output reg  [4:0]  RdD_out,
-    output reg  [2:0]  funct3D_out,     // NEW
     output reg  [3:0]  ALUControlD_out,
     output reg         ALUSrcD_out,
-    output reg  [1:0]  ALUSrcA_out,
+    output reg  [1:0]  ALUSrcA_out,    // NEW
     output reg         RegWriteD_out,
     output reg  [1:0]  ResultSrcD_out,
     output reg         MemWriteD_out,
@@ -64,7 +57,6 @@ module EX_stage (
             Rs1D_out        <= 5'd0;
             Rs2D_out        <= 5'd0;
             RdD_out         <= 5'd0;
-            funct3D_out     <= 3'd0;   // NEW
             ALUControlD_out <= 4'd0;
             ALUSrcD_out     <= 1'b0;
             ALUSrcA_out     <= 2'b00;
@@ -84,7 +76,6 @@ module EX_stage (
             Rs1D_out        <= Rs1D_in;
             Rs2D_out        <= Rs2D_in;
             RdD_out         <= RdD_in;
-            funct3D_out     <= funct3D_in;   // NEW
             ALUControlD_out <= ALUControlD_in;
             ALUSrcD_out     <= ALUSrcD_in;
             ALUSrcA_out     <= ALUSrcA_in;
@@ -100,3 +91,5 @@ module EX_stage (
 endmodule
 
 `default_nettype wire
+
+
