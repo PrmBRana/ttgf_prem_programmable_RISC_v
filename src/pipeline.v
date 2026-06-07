@@ -227,7 +227,7 @@ module pipeline (
     assign ScrB_top = ALUSrcE_top ? ImmExtE_top : outB_top;
 
     // ── PC-target adder ───────────────────────────────────────
-    wire [31:0] base_addr_w = JumpRE_top ? RD1E_top : PCE_top;
+    wire [31:0] base_addr_w = JumpRE_top ? SrcA_fwd : PCE_top;
     assign PCTarget_top = JumpRE_top
         ? ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE)
         :  (base_addr_w + ImmExtE_top);

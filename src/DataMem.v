@@ -1,5 +1,21 @@
 `default_nettype none
 
+// ============================================================
+//  DataMem.v — Fixed version
+//
+//  FIX vs original:
+//    FIFO read-data capture registers added for UART RX and
+//    SPI2 RX. When the CPU reads from the FIFO address, the
+//    current byte is snapshotted into a register AND the
+//    pointer advances — both in the same clock cycle.
+//    The read mux then serves from the snapshot register,
+//    not from the live fifo[ptr], so back-to-back reads
+//    always return correct distinct bytes.
+//
+//    Changed lines marked with -- FIX --
+//    All other logic is identical to the original.
+// ============================================================
+
 module DataMem (
     input  wire        clk,
     input  wire        reset,
@@ -35,24 +51,24 @@ module DataMem (
     // =========================================================
     // Address Decode
     // =========================================================
-    wire sel_uart_tx    = (aluAddress_in == 32'h1000_0000);
-    wire sel_uart_rx    = (aluAddress_in == 32'h1000_0004);
-    wire sel_uart_txst  = (aluAddress_in == 32'h1000_0008);
-    wire sel_uart_rxst  = (aluAddress_in == 32'h1000_000C);
+    wire sel_uart_tx   = (aluAddress_in == 32'h1000_0000);
+    wire sel_uart_rx   = (aluAddress_in == 32'h1000_0004);
+    wire sel_uart_txst = (aluAddress_in == 32'h1000_0008);
+    wire sel_uart_rxst = (aluAddress_in == 32'h1000_000C);
 
-    wire sel_spi2_tx    = (aluAddress_in == 32'h4000_0000);
-    wire sel_spi2_txst  = (aluAddress_in == 32'h4000_0004);
-    wire sel_spi2_rx    = (aluAddress_in == 32'h4000_0008);
-    wire sel_spi2_rxst  = (aluAddress_in == 32'h4000_000C);
+    wire sel_spi2_tx   = (aluAddress_in == 32'h4000_0000);
+    wire sel_spi2_txst = (aluAddress_in == 32'h4000_0004);
+    wire sel_spi2_rx   = (aluAddress_in == 32'h4000_0008);
+    wire sel_spi2_rxst = (aluAddress_in == 32'h4000_000C);
 
-    wire sel_gpio1      = (aluAddress_in == 32'h3000_0000);
-    wire sel_gpio2      = (aluAddress_in == 32'h3000_0004);
+    wire sel_gpio1     = (aluAddress_in == 32'h3000_0000);
+    wire sel_gpio2     = (aluAddress_in == 32'h3000_0004);
 
     // =========================================================
     // FIFO Pointer Next Function
     // =========================================================
     function automatic [1:0] fifo_next_ptr(input [1:0] ptr);
-        fifo_next_ptr = (ptr == 2'd3) ? 2'd0 : ptr + 1;
+        fifo_next_ptr = (ptr == 2'd3) ? 2'd0 : ptr + 2'd1;
     endfunction
 
     // =========================================================
@@ -77,19 +93,19 @@ module DataMem (
                 uart_tx_wr_ptr <= fifo_next_ptr(uart_tx_wr_ptr);
             end
 
-            if (uart_tx_pop) begin
+            if (uart_tx_pop)
                 uart_tx_rd_ptr <= fifo_next_ptr(uart_tx_rd_ptr);
-            end
 
-            // Update flags
+            // Full flag
             if (uart_tx_wr_en && !uart_tx_pop)
-                uart_tx_full  <= (fifo_next_ptr(uart_tx_wr_ptr) == uart_tx_rd_ptr);
+                uart_tx_full <= (fifo_next_ptr(uart_tx_wr_ptr) == uart_tx_rd_ptr);
             else if (!uart_tx_wr_en && uart_tx_pop)
-                uart_tx_full  <= 1'b0;
+                uart_tx_full <= 1'b0;
 
+            // Empty flag
             if (uart_tx_wr_en && !uart_tx_pop)
                 uart_tx_empty <= 1'b0;
-            else if (!uart_tx_wr_en && uart_tx_pop && 
+            else if (!uart_tx_wr_en && uart_tx_pop &&
                      (fifo_next_ptr(uart_tx_rd_ptr) == uart_tx_wr_ptr))
                 uart_tx_empty <= 1'b1;
         end
@@ -116,9 +132,13 @@ module DataMem (
     reg       uart_rx_full, uart_rx_empty;
     reg       uart_rx_ready_r, uart_rx_ready_rr;
 
+    // -- FIX -- capture register: holds byte at time of read
+    reg [7:0] uart_rx_rdata_reg;
+
     wire uart_rx_ready_rise = uart_rx_ready_r & ~uart_rx_ready_rr;
     wire uart_rx_rd_en      = !memwriteM_in && sel_uart_rx && !uart_rx_empty;
 
+    // 2-FF synchronizer for uart_rx_ready (CDC)
     always @(posedge clk) begin
         if (reset) begin
             uart_rx_ready_r  <= 1'b0;
@@ -131,37 +151,45 @@ module DataMem (
 
     always @(posedge clk) begin
         if (reset) begin
-            uart_rx_wr_ptr <= 2'd0;
-            uart_rx_rd_ptr <= 2'd0;
-            uart_rx_full   <= 1'b0;
-            uart_rx_empty  <= 1'b1;
+            uart_rx_wr_ptr    <= 2'd0;
+            uart_rx_rd_ptr    <= 2'd0;
+            uart_rx_full      <= 1'b0;
+            uart_rx_empty     <= 1'b1;
+            uart_rx_rdata_reg <= 8'd0;   // -- FIX --
         end else begin
+            // Write path: new byte from UART peripheral
             if (uart_rx_ready_rise && !uart_rx_full) begin
                 uart_rx_fifo[uart_rx_wr_ptr] <= uart_in_data;
                 uart_rx_wr_ptr <= fifo_next_ptr(uart_rx_wr_ptr);
             end
 
+            // -- FIX --
+            // Read path: snapshot byte into register AND advance
+            // pointer in the same cycle. Read mux uses the register
+            // so back-to-back LW always gets the correct byte.
             if (uart_rx_rd_en) begin
-                uart_rx_rd_ptr <= fifo_next_ptr(uart_rx_rd_ptr);
+                uart_rx_rdata_reg <= uart_rx_fifo[uart_rx_rd_ptr];
+                uart_rx_rd_ptr    <= fifo_next_ptr(uart_rx_rd_ptr);
             end
 
+            // Full flag
             if (uart_rx_ready_rise && !uart_rx_rd_en && !uart_rx_full)
                 uart_rx_full <= (fifo_next_ptr(uart_rx_wr_ptr) == uart_rx_rd_ptr);
             else if (!uart_rx_ready_rise && uart_rx_rd_en)
                 uart_rx_full <= 1'b0;
 
+            // Empty flag
             if (uart_rx_ready_rise && !uart_rx_rd_en)
                 uart_rx_empty <= 1'b0;
-            else if (!uart_rx_ready_rise && uart_rx_rd_en && 
-                     fifo_next_ptr(uart_rx_rd_ptr) == uart_rx_wr_ptr)
+            else if (!uart_rx_ready_rise && uart_rx_rd_en &&
+                     (fifo_next_ptr(uart_rx_rd_ptr) == uart_rx_wr_ptr))
                 uart_rx_empty <= 1'b1;
         end
     end
 
     // =========================================================
-    // SPI2 TX & RX FIFOs (same pattern)
+    // SPI2 TX FIFO
     // =========================================================
-    // SPI2 TX
     reg [7:0] spi2_tx_fifo [0:3];
     reg [1:0] spi2_tx_wr_ptr, spi2_tx_rd_ptr;
     reg       spi2_tx_full, spi2_tx_empty;
@@ -173,8 +201,10 @@ module DataMem (
 
     always @(posedge clk) begin
         if (reset) begin
-            spi2_tx_wr_ptr <= 2'd0; spi2_tx_rd_ptr <= 2'd0;
-            spi2_tx_full   <= 1'b0; spi2_tx_empty  <= 1'b1;
+            spi2_tx_wr_ptr <= 2'd0;
+            spi2_tx_rd_ptr <= 2'd0;
+            spi2_tx_full   <= 1'b0;
+            spi2_tx_empty  <= 1'b1;
         end else begin
             if (spi2_tx_wr_en) begin
                 spi2_tx_fifo[spi2_tx_wr_ptr] <= DataWriteM_in;
@@ -190,8 +220,8 @@ module DataMem (
 
             if (spi2_tx_wr_en && !spi2_tx_pop)
                 spi2_tx_empty <= 1'b0;
-            else if (!spi2_tx_wr_en && spi2_tx_pop && 
-                     fifo_next_ptr(spi2_tx_rd_ptr) == spi2_tx_wr_ptr)
+            else if (!spi2_tx_wr_en && spi2_tx_pop &&
+                     (fifo_next_ptr(spi2_tx_rd_ptr) == spi2_tx_wr_ptr))
                 spi2_tx_empty <= 1'b1;
         end
     end
@@ -209,11 +239,16 @@ module DataMem (
         end
     end
 
-    // SPI2 RX
+    // =========================================================
+    // SPI2 RX FIFO
+    // =========================================================
     reg [7:0] spi2_rx_fifo [0:3];
     reg [1:0] spi2_rx_wr_ptr, spi2_rx_rd_ptr;
     reg       spi2_rx_full, spi2_rx_empty;
     reg       spi2_done_r;
+
+    // -- FIX -- capture register
+    reg [7:0] spi2_rx_rdata_reg;
 
     wire spi2_done_rise = spi2_done & ~spi2_done_r;
     wire spi2_rx_rd_en  = !memwriteM_in && sel_spi2_rx && !spi2_rx_empty;
@@ -225,35 +260,47 @@ module DataMem (
 
     always @(posedge clk) begin
         if (reset) begin
-            spi2_rx_wr_ptr <= 2'd0; spi2_rx_rd_ptr <= 2'd0;
-            spi2_rx_full   <= 1'b0; spi2_rx_empty  <= 1'b1;
+            spi2_rx_wr_ptr    <= 2'd0;
+            spi2_rx_rd_ptr    <= 2'd0;
+            spi2_rx_full      <= 1'b0;
+            spi2_rx_empty     <= 1'b1;
+            spi2_rx_rdata_reg <= 8'd0;   // -- FIX --
         end else begin
+            // Write path: new byte from SPI master
             if (spi2_done_rise && !spi2_rx_full) begin
                 spi2_rx_fifo[spi2_rx_wr_ptr] <= spi2_rx_data;
                 spi2_rx_wr_ptr <= fifo_next_ptr(spi2_rx_wr_ptr);
             end
-            if (spi2_rx_rd_en)
-                spi2_rx_rd_ptr <= fifo_next_ptr(spi2_rx_rd_ptr);
 
+            // -- FIX --
+            // Read path: snapshot and advance together
+            if (spi2_rx_rd_en) begin
+                spi2_rx_rdata_reg <= spi2_rx_fifo[spi2_rx_rd_ptr];
+                spi2_rx_rd_ptr    <= fifo_next_ptr(spi2_rx_rd_ptr);
+            end
+
+            // Full flag
             if (spi2_done_rise && !spi2_rx_rd_en && !spi2_rx_full)
                 spi2_rx_full <= (fifo_next_ptr(spi2_rx_wr_ptr) == spi2_rx_rd_ptr);
             else if (!spi2_done_rise && spi2_rx_rd_en)
                 spi2_rx_full <= 1'b0;
 
+            // Empty flag
             if (spi2_done_rise && !spi2_rx_rd_en)
                 spi2_rx_empty <= 1'b0;
-            else if (!spi2_done_rise && spi2_rx_rd_en && 
-                     fifo_next_ptr(spi2_rx_rd_ptr) == spi2_rx_wr_ptr)
+            else if (!spi2_done_rise && spi2_rx_rd_en &&
+                     (fifo_next_ptr(spi2_rx_rd_ptr) == spi2_rx_wr_ptr))
                 spi2_rx_empty <= 1'b1;
         end
     end
 
     // =========================================================
-    // GPIO (unchanged)
+    // GPIO
     // =========================================================
     always @(posedge clk) begin
         if (reset) begin
-            gpio1_wr_en <= 1'b0; gpio1_wdata <= 1'b1;
+            gpio1_wr_en <= 1'b0;
+            gpio1_wdata <= 1'b1;
         end else begin
             gpio1_wr_en <= 1'b0;
             if (memwriteM_in && sel_gpio1) begin
@@ -265,7 +312,8 @@ module DataMem (
 
     always @(posedge clk) begin
         if (reset) begin
-            gpio2_wr_en <= 1'b0; gpio2_wdata <= 1'b1;
+            gpio2_wr_en <= 1'b0;
+            gpio2_wdata <= 1'b1;
         end else begin
             gpio2_wr_en <= 1'b0;
             if (memwriteM_in && sel_gpio2) begin
@@ -276,27 +324,33 @@ module DataMem (
     end
 
     // =========================================================
-    // READ MUX - Fixed width
+    // READ MUX
+    //
+    // -- FIX --
+    // sel_uart_rx  → uart_rx_rdata_reg  (was: uart_rx_fifo[ptr])
+    // sel_spi2_rx  → spi2_rx_rdata_reg  (was: spi2_rx_fifo[ptr])
+    //
+    // All other reads unchanged.
     // =========================================================
     always @(*) begin
         DataMem_out = 32'h0000_0000;
 
         if (!memwriteM_in) begin
-            if      (sel_uart_txst)  
+            if      (sel_uart_txst)
                 DataMem_out = {29'd0, uart_tx_full, uart_tx_busy, !uart_tx_empty};
-            else if (sel_uart_rx)    
-                DataMem_out = {24'd0, uart_rx_fifo[uart_rx_rd_ptr]};
-            else if (sel_uart_rxst)  
-                DataMem_out = {29'd0, uart_rx_full, 1'b0, !uart_rx_empty};   // fixed
+            else if (sel_uart_rx)
+                DataMem_out = {24'd0, uart_rx_rdata_reg};        // -- FIX --
+            else if (sel_uart_rxst)
+                DataMem_out = {29'd0, uart_rx_full, 1'b0, !uart_rx_empty};
 
-            else if (sel_spi2_tx)    
+            else if (sel_spi2_tx)
                 DataMem_out = {24'd0, spi2_tx_fifo[spi2_tx_rd_ptr]};
-            else if (sel_spi2_txst)  
+            else if (sel_spi2_txst)
                 DataMem_out = {29'd0, spi2_tx_full, spi2_busy, !spi2_tx_empty};
-            else if (sel_spi2_rx)    
-                DataMem_out = {24'd0, spi2_rx_fifo[spi2_rx_rd_ptr]};
-            else if (sel_spi2_rxst)  
-                DataMem_out = {29'd0, spi2_rx_full, 1'b0, !spi2_rx_empty};   // fixed
+            else if (sel_spi2_rx)
+                DataMem_out = {24'd0, spi2_rx_rdata_reg};        // -- FIX --
+            else if (sel_spi2_rxst)
+                DataMem_out = {29'd0, spi2_rx_full, 1'b0, !spi2_rx_empty};
         end
     end
 
