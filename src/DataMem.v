@@ -300,7 +300,7 @@ module DataMem (
     always @(posedge clk) begin
         if (reset) begin
             gpio1_wr_en <= 1'b0;
-            gpio1_wdata <= 1'b1;
+            gpio1_wdata <= 1'b0;
         end else begin
             gpio1_wr_en <= 1'b0;
             if (memwriteM_in && sel_gpio1) begin
