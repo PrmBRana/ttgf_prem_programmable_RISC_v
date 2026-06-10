@@ -123,7 +123,7 @@ module DataMem (
     reg       spi2_pending;
     reg [7:0] spi2_tx_buf;
 
-    wire spi2_tx_wr = memwriteM_in && sel_spi2_tx && !spi2_pending;
+    wire spi2_tx_wr = memwriteM_in && sel_spi2_tx && !spi2_pending && !spi2_start;
 
     assign spi2_pending_out = spi2_pending;
 
@@ -141,7 +141,7 @@ module DataMem (
                 spi2_pending <= 1'b1;
             end
 
-            if (spi2_pending && !spi2_busy && !spi2_done) begin
+            if (spi2_pending && !spi2_busy) begin
                 spi2_tx_data <= spi2_tx_buf;
                 spi2_start   <= 1'b1;
                 spi2_pending <= 1'b0;
