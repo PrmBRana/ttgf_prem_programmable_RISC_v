@@ -39,6 +39,7 @@ module tt_um_prem_pipeline_test (
     wire SPI_MOSI_TOP;
     wire SPI_SCLK_TOP;
     wire SPI_MISO_TOP = uio_in[2];
+    wire SPI_CS_GPIO3_TOP;
 
     // ── GPIO ─────────────────────────────────────────────
     wire GPIO1_TOP;
@@ -57,7 +58,8 @@ module tt_um_prem_pipeline_test (
     assign uio_out[2] = 1'b0;              // MISO input
     assign uio_out[3] = SPI_SCLK_TOP;
     assign uio_out[4] = GPIO1_TOP;
-    assign uio_out[7:5] = 3'b000;
+    assign uio_out[5] = SPI_CS_GPIO3_TOP;
+    assign uio_out[7:6] = 2'b00;
 
     // =====================================================
     // uio_oe
@@ -68,7 +70,8 @@ module tt_um_prem_pipeline_test (
     assign uio_oe[2] = 1'b0; // MISO input
     assign uio_oe[3] = 1'b1; // SCLK
     assign uio_oe[4] = 1'b1; // GPIO1
-    assign uio_oe[7:5] = 3'b000;
+    assign uio_oe[5] = 1'b1; // GPIO3/CS_N
+    assign uio_oe[7:6] = 2'b00;
 
     // =====================================================
     // Core
@@ -87,8 +90,10 @@ module tt_um_prem_pipeline_test (
         .SPI_MOSI     (SPI_MOSI_TOP),
         .SPI_MISO     (SPI_MISO_TOP),
         .SPI_CS_GPIO2 (SPI_CS_GPIO2_TOP),
+        .SPI_CS_GPIO3 (SPI_CS_GPIO3_TOP),
 
         .Gpio1        (GPIO1_TOP)
+
     );
 
 endmodule

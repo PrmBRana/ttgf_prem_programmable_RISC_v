@@ -25,13 +25,17 @@ module DataMem (
     input  wire        spi2_busy,
     input  wire        spi2_done,
 
-    // ── GPIO1 ─────────────────────────────────────────────────
+    // ── GPIO1 (LED) ───────────────────────────────────────────
     output reg         gpio1_wr_en,
     output reg         gpio1_wdata,
 
-    // ── GPIO2 (SPI2 CS_N) ─────────────────────────────────────
+    // ── GPIO2 (IAM20380 CS_N) ─────────────────────────────────
     output reg         gpio2_wr_en,
-    output reg         gpio2_wdata
+    output reg         gpio2_wdata,
+
+    // ── GPIO3 (MMC5983MA CS_N) ────────────────────────────────
+    output reg         gpio3_wr_en,
+    output reg         gpio3_wdata
 );
 
     // =========================================================
@@ -49,6 +53,7 @@ module DataMem (
 
     wire sel_gpio1      = (aluAddress_in == 32'h3000_0000);
     wire sel_gpio2      = (aluAddress_in == 32'h3000_0004);
+    wire sel_gpio3      = (aluAddress_in == 32'h3000_0008);  // ← NEW
 
     // =========================================================
     // UART TX
@@ -105,13 +110,10 @@ module DataMem (
             uart_rx_reg   <= 8'd0;
             uart_rx_valid <= 1'b0;
         end else begin
-            // Capture new byte
             if (uart_rx_ready_rise && !uart_rx_valid) begin
                 uart_rx_reg   <= uart_in_data;
                 uart_rx_valid <= 1'b1;
             end
-
-            // Clear when read
             if (uart_rx_rd)
                 uart_rx_valid <= 1'b0;
         end
@@ -160,9 +162,9 @@ module DataMem (
     wire spi2_rx_rd = !memwriteM_in && sel_spi2_rx && spi2_rx_valid;
 
     always @(posedge clk) begin
-        if (reset) 
+        if (reset)
             spi2_done_r <= 1'b0;
-        else 
+        else
             spi2_done_r <= spi2_done;
     end
 
@@ -175,19 +177,18 @@ module DataMem (
                 spi2_rx_reg   <= spi2_rx_data;
                 spi2_rx_valid <= 1'b1;
             end
-
             if (spi2_rx_rd)
                 spi2_rx_valid <= 1'b0;
         end
     end
 
     // =========================================================
-    // GPIO1
+    // GPIO1 — LED
     // =========================================================
     always @(posedge clk) begin
         if (reset) begin
             gpio1_wr_en <= 1'b0;
-            gpio1_wdata <= 1'b0;
+            gpio1_wdata <= 1'b0;        // LED OFF on reset
         end else begin
             gpio1_wr_en <= 1'b0;
             if (memwriteM_in && sel_gpio1) begin
@@ -198,17 +199,33 @@ module DataMem (
     end
 
     // =========================================================
-    // GPIO2
+    // GPIO2 — IAM20380 CS_N (Gyroscope)
     // =========================================================
     always @(posedge clk) begin
         if (reset) begin
             gpio2_wr_en <= 1'b0;
-            gpio2_wdata <= 1'b1;   // CS_N idle high
+            gpio2_wdata <= 1'b1;        // CS_N idle HIGH
         end else begin
             gpio2_wr_en <= 1'b0;
             if (memwriteM_in && sel_gpio2) begin
                 gpio2_wdata <= DataWriteM_in[0];
                 gpio2_wr_en <= 1'b1;
+            end
+        end
+    end
+
+    // =========================================================
+    // GPIO3 — MMC5983MA CS_N (Magnetometer)       ← NEW
+    // =========================================================
+    always @(posedge clk) begin
+        if (reset) begin
+            gpio3_wr_en <= 1'b0;
+            gpio3_wdata <= 1'b1;        // CS_N idle HIGH
+        end else begin
+            gpio3_wr_en <= 1'b0;
+            if (memwriteM_in && sel_gpio3) begin
+                gpio3_wdata <= DataWriteM_in[0];
+                gpio3_wr_en <= 1'b1;
             end
         end
     end

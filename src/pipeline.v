@@ -15,7 +15,8 @@ module pipeline (
     output wire SPI_SCLK,
     output wire SPI_MOSI,
     input  wire SPI_MISO,
-    output wire SPI_CS_GPIO2
+    output wire SPI_CS_GPIO2,          
+    output wire SPI_CS_GPIO3           
 );
     // =========================================================
     // PIPELINE WIRES
@@ -65,10 +66,6 @@ module pipeline (
     wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
     reg  halt_latch;
 
-    // Synchronous reset — matches pc_register and all pipeline
-    // registers which also use synchronous reset.
-    // Using async reset here while sub-modules use sync reset
-    // causes Verilator SYNCASYNCNET on the shared reset net.
     always @(posedge clk) begin
         if (reset)            halt_latch <= 1'b0;
         else if (stall_Pro)   halt_latch <= 1'b0;
@@ -77,7 +74,6 @@ module pipeline (
 
     wire halt_final = halt_latch | halt_active;
 
-    // Flat boolean — avoids synthesiser generating OR chain
     wire StallF_net = ~PCSCR_top & (stall_Pro | StallF_top | halt_final);
     wire StallD_net = ~PCSCR_top & (stall_Pro | StallD_top | halt_final);
 
@@ -93,7 +89,6 @@ module pipeline (
         .PCBranch(PCTarget_top),
         .Mux3_PC(PC_top));
 
-    // clk used directly — CTS builds the tree, no manual buffers
     pc_register Register_top (
         .clk(clk), .reset(reset),
         .PCF_in(PC_top), .stallF(StallF_net),
@@ -111,11 +106,11 @@ module pipeline (
         .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
 
     uart_bootloader uart_bootloader_inst (
-        .clk(clk), 
+        .clk(clk),
         .reset(reset),
-        .rx_data(uart_rx_data_boot), 
+        .rx_data(uart_rx_data_boot),
         .rx_valid(uart_rx_ready_boot),
-        .tx_data(boot_tx_data),      
+        .tx_data(boot_tx_data),
         .tx_start(boot_tx_start),
         .mem_we(Write_enable),
         .mem_addr(mem_addr),
@@ -123,7 +118,7 @@ module pipeline (
         .stall_pro(stall_Pro));
 
     instruction_mem #(.DEPTH(64), .ADDR_W(6)) imem (
-        .clk(clk), 
+        .clk(clk),
         .we(Write_enable),
         .addr(mem_addr),
         .wdata(mem_wdata),
@@ -134,15 +129,15 @@ module pipeline (
     // DECODE
     // =========================================================
     IF_ID_stage IF_DF_top (
-        .clk(clk), 
+        .clk(clk),
         .reset(reset),
-        .stallD(StallD_net), 
+        .stallD(StallD_net),
         .flushD(FlushD_top),
-        .PC_in(PCF), 
+        .PC_in(PCF),
         .PCplus4_in(PCPLUS4_top),
         .instruction_in(Instruction1_out),
         .instruction_out(INSTRUCTION),
-        .PCplus4_out(PCPLUS4D_TOP), 
+        .PCplus4_out(PCPLUS4D_TOP),
         .PC_out(PCD_top));
 
     wire [6:0]  INSTR_op   = INSTRUCTION[6:0];
@@ -209,14 +204,14 @@ module pipeline (
         .BranchD_out(BranchE_top),  .JumpD_out(JumpE_top),
         .JumpR_out(JumpRE_top),     .ALUType_out(ALUTypE_top));
 
-    // ── Forwarding MUX A (with LUI/AUIPC SrcA override) ──────
+    // ── Forwarding MUX A ──────────────────────────────────────
     wire [31:0] SrcA_fwd =
         (ForwardAE_top == 2'b10) ? ALUResultM_top :
         (ForwardAE_top == 2'b01) ? ResultW_top    : RD1E_top;
 
     assign SrcA_top =
-        (ALUSrcAE_top == 2'b10) ? 32'd0   :    // LUI
-        (ALUSrcAE_top == 2'b01) ? PCE_top :    // AUIPC
+        (ALUSrcAE_top == 2'b10) ? 32'd0   :
+        (ALUSrcAE_top == 2'b01) ? PCE_top :
                                    SrcA_fwd;
 
     // ── Forwarding MUX B ──────────────────────────────────────
@@ -286,7 +281,7 @@ module pipeline (
     Hazard_Unit hazard (
         .Rs1D(INSTR_rs1),    .Rs2D(INSTR_rs2),
         .Rs1E(Rs1E_top),     .Rs2E(Rs2E_top),
-        .RdE(RdE_top),      
+        .RdE(RdE_top),
         .PCSRCE(PCSCR_top),
         .ResultSrcE_in(ResultSrcE_top),
         .RdM(RdM_top),       .RdW(RdW_top),
@@ -301,12 +296,28 @@ module pipeline (
     // PERIPHERAL WIRES
     // =========================================================
     wire        spi2_start_w, spi2_busy_w, spi2_done_w;
-    wire        spi2_pending_w;           // fed to gpio2 — not floating
+    wire        spi2_pending_w;
     wire [7:0]  spi2_tx_data_w, spi2_rx_data_w;
     wire        gpio1_wr_en_w, gpio1_wdata_w;
     wire        gpio2_wr_en_w, gpio2_wdata_w;
+    wire        gpio3_wr_en_w, gpio3_wdata_w;    // ← NEW
     wire        UART_tx_start_w, UART_tx_busy_w, UART_rx_ready_w;
     wire [7:0]  UART_tx_data_w, UART_rx_data_w;
+
+    // ── Fanout fix: buffer spi_busy + spi_pending ─────────────
+    // spi2_busy_w र spi2_pending_w दुवै gpio2 र gpio3 मा जान्छन्
+    // direct wire गर्दा fanout बढ्छ
+    // registered buffer मार्फत दिइन्छ
+    reg spi2_busy_buf, spi2_pending_buf;
+    always @(posedge clk) begin
+        if (reset) begin
+            spi2_busy_buf    <= 1'b0;
+            spi2_pending_buf <= 1'b0;
+        end else begin
+            spi2_busy_buf    <= spi2_busy_w;
+            spi2_pending_buf <= spi2_pending_w;
+        end
+    end
 
     // =========================================================
     // DataMem
@@ -331,7 +342,9 @@ module pipeline (
         .gpio1_wr_en(gpio1_wr_en_w),
         .gpio1_wdata(gpio1_wdata_w),
         .gpio2_wr_en(gpio2_wr_en_w),
-        .gpio2_wdata(gpio2_wdata_w));
+        .gpio2_wdata(gpio2_wdata_w),
+        .gpio3_wr_en(gpio3_wr_en_w),        // ← NEW
+        .gpio3_wdata(gpio3_wdata_w));        // ← NEW
 
     // =========================================================
     // Peripheral UART
@@ -365,30 +378,37 @@ module pipeline (
         .miso(SPI_MISO));
 
     // =========================================================
-    // GPIO1 → SPI1 CS_N
-    // gpio1 watches spi2 status so CS deasserts safely
+    // GPIO1 — LED
     // =========================================================
     gpio1_io gpio1 (
-        .clk(clk), 
+        .clk(clk),
         .reset(reset),
-        .wr_en1(gpio1_wr_en_w), 
+        .wr_en1(gpio1_wr_en_w),
         .wdata1(gpio1_wdata_w),
         .gpio_out1(Gpio1));
 
     // =========================================================
-    // GPIO2 → SPI2 CS_N
-    // spi2_pending_w consumed here — fixes floating net
+    // buffered spi signals दिइन्छ — fanout safe
     // =========================================================
     gpio2_io gpio2 (
         .clk(clk), .reset(reset),
-        .wr_en2(gpio2_wr_en_w), .wdata2(gpio2_wdata_w),
-        .spi_busy(spi2_busy_w),
-        .spi_pending(spi2_pending_w),
+        .wr_en2(gpio2_wr_en_w),
+        .wdata2(gpio2_wdata_w),
+        .spi_busy(spi2_busy_buf),       // ← buffered
+        .spi_pending(spi2_pending_buf), // ← buffered
         .gpio_out2(SPI_CS_GPIO2));
+
+    // =========================================================
+    // same buffered spi signals
+    // =========================================================
+    gpio3_io gpio3 (
+        .clk(clk), .reset(reset),
+        .wr_en3(gpio3_wr_en_w),
+        .wdata3(gpio3_wdata_w),
+        .spi_busy(spi2_busy_buf),       // ← buffered
+        .spi_pending(spi2_pending_buf), // ← buffered
+        .gpio_out3(SPI_CS_GPIO3));
 
 endmodule
 
 `default_nettype wire
-
-
-

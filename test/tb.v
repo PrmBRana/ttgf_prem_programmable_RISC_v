@@ -21,13 +21,14 @@ module tb();
     wire UART_tx;
 
     // ── SPI ───────────────────────────────────────
-    reg  spi2_miso;
+    reg  SPI_MISO_TOP;
 
-    wire spi2_mosi;
-    wire spi2_sclk;
-    wire spi2_cs_n;
+    wire SPI_MOSI_TOP;
+    wire SPI_SCLK_TOP;
+    wire SPI_CS_GPIO2_TOP;
+    wire SPI_CS_GPIO3_TOP;
 
-    wire gpio1;
+    wire GPIO1_TOP;
 
     // ── IO buses ──────────────────────────────────
     reg  [7:0] uio_in;
@@ -44,7 +45,7 @@ module tb();
     // ── UIO input mapping ────────────────────────
     always @(*) begin
         uio_in    = 8'b0;
-        uio_in[2] = spi2_miso;
+        uio_in[2] = SPI_MISO_TOP;
     end
 
     // ── UART outputs ─────────────────────────────
@@ -52,12 +53,13 @@ module tb();
     assign UART_tx = uo_out[1];
 
     // ── SPI outputs ──────────────────────────────
-    assign spi2_cs_n = uio_out[0];
-    assign spi2_mosi = uio_out[1];
-    assign spi2_sclk = uio_out[3];
+    assign SPI_CS_GPIO2_TOP = uio_out[0];
+    assign SPI_MOSI_TOP = uio_out[1];
+    assign SPI_SCLK_TOP = uio_out[3];
+    assign SPI_CS_GPIO3_TOP = uio_out[5];
 
     // ── GPIO ─────────────────────────────────────
-    assign gpio1 = uio_out[4];
+    assign GPIO1_TOP = uio_out[4];
 
     // ── Clock ────────────────────────────────────
     always #20 clk = ~clk;
@@ -73,7 +75,7 @@ module tb();
 
         rx           = 1;
         UART_rx_line = 1;
-        spi2_miso    = 1;
+        SPI_MISO_TOP    = 1;
     end
 
 `ifdef GL_TEST

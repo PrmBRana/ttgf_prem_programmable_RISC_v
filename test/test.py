@@ -95,10 +95,10 @@ async def test_uart_bootloader(dut):
 # ============================================================
 async def spi_slave_full_duplex(dut, slave_tx_data):
 
-    sclk = dut.spi2_sclk
-    mosi = dut.spi2_mosi
-    miso = dut.spi2_miso
-    cs   = dut.spi2_cs_n
+    sclk = dut.SPI_SCLK_TOP
+    mosi = dut.SPI_MOSI_TOP
+    miso = dut.SPI_MISO_TOP
+    cs   = dut.SPI_CS_GPIO2_TOP
     uart_sink   = UartSink(dut.tx, baud=115200)
 
     received = []
@@ -152,9 +152,9 @@ async def spi_debug_monitor(dut):
     while True:
         await Timer(500, units='us')
         dut._log.info(
-            f"DEBUG → CS={int(dut.spi2_cs_n.value)} "
-            f"SCLK={int(dut.spi2_sclk.value)} "
-            f"MOSI={int(dut.spi2_mosi.value)}"
+            f"DEBUG → CS={int(dut.SPI_CS_GPIO2_TOP.value)} "
+            f"SCLK={int(dut.SPI_SCLK_TOP.value)} "
+            f"MOSI={int(dut.SPI_MOSI_TOP.value)}"
         )
 
 
