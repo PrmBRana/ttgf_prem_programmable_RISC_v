@@ -62,7 +62,7 @@ module tb();
     assign GPIO1_TOP = uio_out[4];
 
     // ── Clock ────────────────────────────────────
-    always #20 clk = ~clk;
+    always #25 clk = ~clk;
 
     // ── Reset + init ─────────────────────────────
     initial begin
