@@ -122,9 +122,9 @@ module pipeline (
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(20_000_000),
+        .CLK_FREQ(25_000_000),
         .BAUD_RATE(115_200),
-        .OVERSAMPLE(8)
+        .OVERSAMPLE(16)
     ) uart_boot_inst (
         .clk(clk),
         .reset(reset_sync),
@@ -421,9 +421,9 @@ module pipeline (
     // PERIPHERAL UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(20_000_000),
+        .CLK_FREQ(25_000_000),
         .BAUD_RATE(115_200),
-        .OVERSAMPLE(8)
+        .OVERSAMPLE(16)
     ) uart_inst0 (
         .clk(clk),
         .reset(reset_sync),
