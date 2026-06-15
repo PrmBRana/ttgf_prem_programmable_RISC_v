@@ -1,7 +1,7 @@
 `default_nettype none
 
 // ============================================================
-//  pipeline.v — Final version for GF180MCU Tiny Tapeout
+//  pipeline.v — RISC-V pipeline implementation
 // ============================================================
 
 module pipeline (
@@ -15,9 +15,28 @@ module pipeline (
     output wire SPI_SCLK,
     output wire SPI_MOSI,
     input  wire SPI_MISO,
-    output wire SPI_CS_GPIO2,          
-    output wire SPI_CS_GPIO3           
+    output wire SPI_CS_GPIO2,
+    output wire SPI_CS_GPIO3
 );
+
+    // =========================================================
+    //  FIX 1 — RESET FANOUT REDUCTION
+    // =========================================================
+    (* keep = "true" *) reg reset_buf1;
+    (* keep = "true" *) reg reset_buf2;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            reset_buf1 <= 1'b1;   // async assert — immediate
+            reset_buf2 <= 1'b1;
+        end else begin
+            reset_buf1 <= 1'b0;   // sync de-assert — glitch-free
+            reset_buf2 <= reset_buf1;
+        end
+    end
+
+    wire reset_sync = reset_buf2;
+
     // =========================================================
     // PIPELINE WIRES
     // =========================================================
@@ -64,24 +83,27 @@ module pipeline (
     // HALT LOGIC
     // =========================================================
     wire halt_active = halt_top & ~stall_Pro & ~FlushD_top & ~FlushE_top;
-    reg  halt_latch;
 
+    reg halt_latch;
     always @(posedge clk) begin
-        if (reset)            halt_latch <= 1'b0;
+        if (reset_sync)       halt_latch <= 1'b0;
         else if (stall_Pro)   halt_latch <= 1'b0;
         else if (halt_active) halt_latch <= 1'b1;
     end
 
     wire halt_final = halt_latch | halt_active;
 
+    // StallF/StallD — register गर्नु हुँदैन (latency bug)
+    // Hazard unit output directly wire गरिन्छ
     wire StallF_net = ~PCSCR_top & (stall_Pro | StallF_top | halt_final);
     wire StallD_net = ~PCSCR_top & (stall_Pro | StallD_top | halt_final);
 
     // =========================================================
-    // FETCH
+    // FETCH STAGE
     // =========================================================
     PC_incre PC (
-        .pc(PCF), .PCPlus4(PCPLUS4_top));
+        .pc(PCF),
+        .PCPlus4(PCPLUS4_top));
 
     PCSelect_MUX PCSelect_top (
         .PCScr(PCSCR_top),
@@ -90,24 +112,32 @@ module pipeline (
         .Mux3_PC(PC_top));
 
     pc_register Register_top (
-        .clk(clk), .reset(reset),
-        .PCF_in(PC_top), .stallF(StallF_net),
+        .clk(clk),
+        .reset(reset_sync),
+        .PCF_in(PC_top),
+        .stallF(StallF_net),
         .PCF_out(PCF));
 
     // =========================================================
     // BOOTLOADER + IMEM
     // =========================================================
     uart_Tx_fixed #(
-        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000),
+        .BAUD_RATE(115_200),
+        .OVERSAMPLE(16)
     ) uart_boot_inst (
-        .clk(clk), .reset(reset),
-        .tx_Start(boot_tx_start), .tx_Data(boot_tx_data),
-        .tx(tx), .rx(rx),
-        .rx_Data(uart_rx_data_boot), .rx_ready(uart_rx_ready_boot));
+        .clk(clk),
+        .reset(reset_sync),
+        .tx_Start(boot_tx_start),
+        .tx_Data(boot_tx_data),
+        .tx(tx),
+        .rx(rx),
+        .rx_Data(uart_rx_data_boot),
+        .rx_ready(uart_rx_ready_boot));
 
     uart_bootloader uart_bootloader_inst (
         .clk(clk),
-        .reset(reset),
+        .reset(reset_sync),
         .rx_data(uart_rx_data_boot),
         .rx_valid(uart_rx_ready_boot),
         .tx_data(boot_tx_data),
@@ -117,7 +147,10 @@ module pipeline (
         .mem_wdata(mem_wdata),
         .stall_pro(stall_Pro));
 
-    instruction_mem #(.DEPTH(64), .ADDR_W(6)) imem (
+    instruction_mem #(
+        .DEPTH(64),
+        .ADDR_W(6)
+    ) imem (
         .clk(clk),
         .we(Write_enable),
         .addr(mem_addr),
@@ -126,11 +159,11 @@ module pipeline (
         .Instruction_out(Instruction1_out));
 
     // =========================================================
-    // DECODE
+    // DECODE STAGE
     // =========================================================
     IF_ID_stage IF_DF_top (
         .clk(clk),
-        .reset(reset),
+        .reset(reset_sync),
         .stallD(StallD_net),
         .flushD(FlushD_top),
         .PC_in(PCF),
@@ -150,24 +183,32 @@ module pipeline (
     wire [4:0]  INSTR_rd   = INSTRUCTION[11:7];
 
     Control control (
-        .Opcode(INSTR_op),     .funct3(INSTR_f3),
-        .funct7(INSTR_f7),     .imm(INSTR_imm),
+        .Opcode(INSTR_op),
+        .funct3(INSTR_f3),
+        .funct7(INSTR_f7),
+        .imm(INSTR_imm),
         .halt(halt_top),
         .RegWriteD(RegWrite_top),
         .ResultSrcD(ResultSrcD_top),
         .MemWriteD(memWriteD_top),
-        .jumpD(jumpD_top),     .jumpR(jumpRD_top),
+        .jumpD(jumpD_top),
+        .jumpR(jumpRD_top),
         .BranchD(BranchD_top),
         .ALUControlD(ALUControlD_top),
-        .ALUSrcD(ALUSrcD_top), .ALUSrcA(ALUSrcAD_top),
-        .ImmSrc(ImmSrc_top),   .ALUType(ALUtyp_top));
+        .ALUSrcD(ALUSrcD_top),
+        .ALUSrcA(ALUSrcAD_top),
+        .ImmSrc(ImmSrc_top),
+        .ALUType(ALUtyp_top));
 
     Reg_file Reg_file_top (
         .clk(clk),
-        .rs1_addr(INSTR_rs1),  .rs2_addr(INSTR_rs2),
-        .rd_addr(RdW_top),     .Regwrite(RegWriteW_top),
+        .rs1_addr(INSTR_rs1),
+        .rs2_addr(INSTR_rs2),
+        .rd_addr(RdW_top),
+        .Regwrite(RegWriteW_top),
         .Write_data(ResultW_top),
-        .Read_data1(RD1_top),  .Read_data2(RD2_top));
+        .Read_data1(RD1_top),
+        .Read_data2(RD2_top));
 
     imm imm_top (
         .ImmSrc(ImmSrc_top),
@@ -175,34 +216,48 @@ module pipeline (
         .ImmExt(ImmExtD_top));
 
     // =========================================================
-    // EXECUTE
+    // EXECUTE STAGE
     // =========================================================
     EX_stage ex_stage (
-        .clk(clk), .reset(reset), .flushE(FlushE_top),
-        .RD1D_in(RD1_top),          .RD2D_in(RD2_top),
+        .clk(clk),
+        .reset(reset_sync),
+        .flushE(FlushE_top),
+        .RD1D_in(RD1_top),
+        .RD2D_in(RD2_top),
         .ImmExtD_in(ImmExtD_top),
-        .PCPlus4D_in(PCPLUS4D_TOP), .PC_D_in(PCD_top),
-        .Rs1D_in(INSTR_rs1),        .Rs2D_in(INSTR_rs2),
+        .PCPlus4D_in(PCPLUS4D_TOP),
+        .PC_D_in(PCD_top),
+        .Rs1D_in(INSTR_rs1),
+        .Rs2D_in(INSTR_rs2),
         .RdD_in(INSTR_rd),
         .ALUControlD_in(ALUControlD_top),
-        .ALUSrcD_in(ALUSrcD_top),   .ALUSrcA_in(ALUSrcAD_top),
+        .ALUSrcD_in(ALUSrcD_top),
+        .ALUSrcA_in(ALUSrcAD_top),
         .RegWriteD_in(RegWrite_top),
         .ResultSrcD_in(ResultSrcD_top),
         .MemWriteD_in(memWriteD_top),
-        .BranchD_in(BranchD_top),   .JumpD_in(jumpD_top),
-        .JumpR_in(jumpRD_top),      .ALUType_in(ALUtyp_top),
-        .RD1E_out(RD1E_top),        .RD2E_out(RD2E_top),
+        .BranchD_in(BranchD_top),
+        .JumpD_in(jumpD_top),
+        .JumpR_in(jumpRD_top),
+        .ALUType_in(ALUtyp_top),
+        .RD1E_out(RD1E_top),
+        .RD2E_out(RD2E_top),
         .ImmExtD_out(ImmExtE_top),
-        .PCPlus4D_out(PCPlus4E_top),.PC_D_out(PCE_top),
-        .Rs1D_out(Rs1E_top),        .Rs2D_out(Rs2E_top),
+        .PCPlus4D_out(PCPlus4E_top),
+        .PC_D_out(PCE_top),
+        .Rs1D_out(Rs1E_top),
+        .Rs2D_out(Rs2E_top),
         .RdD_out(RdE_top),
         .ALUControlD_out(ALUControlE_top),
-        .ALUSrcD_out(ALUSrcE_top),  .ALUSrcA_out(ALUSrcAE_top),
+        .ALUSrcD_out(ALUSrcE_top),
+        .ALUSrcA_out(ALUSrcAE_top),
         .RegWriteD_out(RegWriteE_top),
         .ResultSrcD_out(ResultSrcE_top),
         .MemWriteD_out(MemWriteE_top),
-        .BranchD_out(BranchE_top),  .JumpD_out(JumpE_top),
-        .JumpR_out(JumpRE_top),     .ALUType_out(ALUTypE_top));
+        .BranchD_out(BranchE_top),
+        .JumpD_out(JumpE_top),
+        .JumpR_out(JumpRE_top),
+        .ALUType_out(ALUTypE_top));
 
     // ── Forwarding MUX A ──────────────────────────────────────
     wire [31:0] SrcA_fwd =
@@ -211,8 +266,7 @@ module pipeline (
 
     assign SrcA_top =
         (ALUSrcAE_top == 2'b10) ? 32'd0   :
-        (ALUSrcAE_top == 2'b01) ? PCE_top :
-                                   SrcA_fwd;
+        (ALUSrcAE_top == 2'b01) ? PCE_top : SrcA_fwd;
 
     // ── Forwarding MUX B ──────────────────────────────────────
     assign outB_top =
@@ -223,6 +277,7 @@ module pipeline (
 
     // ── PC-target adder ───────────────────────────────────────
     wire [31:0] base_addr_w = JumpRE_top ? SrcA_fwd : PCE_top;
+
     assign PCTarget_top = JumpRE_top
         ? ((base_addr_w + ImmExtE_top) & 32'hFFFFFFFE)
         :  (base_addr_w + ImmExtE_top);
@@ -230,41 +285,50 @@ module pipeline (
     assign PCSCR_top = (zero_top & BranchE_top) | JumpE_top;
 
     ALU alu (
-        .ScrA(SrcA_top),             .ScrB(ScrB_top),
-        .ALUControl(ALUControlE_top), .ALUType(ALUTypE_top),
-        .ALUResult(ALUResultE_top),   .Zero(zero_top));
+        .ScrA(SrcA_top),
+        .ScrB(ScrB_top),
+        .ALUControl(ALUControlE_top),
+        .ALUType(ALUTypE_top),
+        .ALUResult(ALUResultE_top),
+        .Zero(zero_top));
 
     // =========================================================
     // MEMORY STAGE
     // =========================================================
     MEM_stage mem_stage (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .ALUResult_in(ALUResultE_top),
         .WriteData_in(outB_top),
-        .RdM_in(RdE_top),             .PCPlus4M_in(PCPlus4E_top),
+        .RdM_in(RdE_top),
+        .PCPlus4M_in(PCPlus4E_top),
         .RegWriteM_in(RegWriteE_top),
         .ResultSrcM_in(ResultSrcE_top),
         .MemWriteM_in(MemWriteE_top),
         .ALUResult_out(ALUResultM_top),
         .WriteData_out(WriteDataM_top),
-        .RdM_out(RdM_top),            .PCPlus4M_out(PCPlus4M_top),
+        .RdM_out(RdM_top),
+        .PCPlus4M_out(PCPlus4M_top),
         .RegWriteM_out(RegWriteM_top),
         .ResultSrcM_out(ResultSrcM_top),
         .MemWriteM_out(MemWriteM_top));
 
     // =========================================================
-    // WRITEBACK
+    // WRITEBACK STAGE
     // =========================================================
     WriteBack_stage writeback_stage (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .ALUResultW_in(ALUResultM_top),
         .ReadDataW_in(Datamem_top),
-        .RdW_in(RdM_top),             .PCPlus4W_in(PCPlus4M_top),
+        .RdW_in(RdM_top),
+        .PCPlus4W_in(PCPlus4M_top),
         .RegWriteW_in(RegWriteM_top),
         .ResultSrcW_in(ResultSrcM_top),
         .ALUResultW_out(ALUResultW_top),
         .ReadDataW_out(ReadDataW_top),
-        .RdW_out(RdW_top),            .PCPlus4W_out(PCPlus4W_top),
+        .RdW_out(RdW_top),
+        .PCPlus4W_out(PCPlus4W_top),
         .RegWriteW_out(RegWriteW_top),
         .ResultSrcW_out(ResultSrcW_top));
 
@@ -279,16 +343,21 @@ module pipeline (
     // HAZARD UNIT
     // =========================================================
     Hazard_Unit hazard (
-        .Rs1D(INSTR_rs1),    .Rs2D(INSTR_rs2),
-        .Rs1E(Rs1E_top),     .Rs2E(Rs2E_top),
+        .Rs1D(INSTR_rs1),
+        .Rs2D(INSTR_rs2),
+        .Rs1E(Rs1E_top),
+        .Rs2E(Rs2E_top),
         .RdE(RdE_top),
         .PCSRCE(PCSCR_top),
         .ResultSrcE_in(ResultSrcE_top),
-        .RdM(RdM_top),       .RdW(RdW_top),
+        .RdM(RdM_top),
+        .RdW(RdW_top),
         .RegWriteM(RegWriteM_top),
         .RegWriteW(RegWriteW_top),
-        .StallF(StallF_top), .StallD(StallD_top),
-        .FlushD(FlushD_top), .FlushE(FlushE_top),
+        .StallF(StallF_top),
+        .StallD(StallD_top),
+        .FlushD(FlushD_top),
+        .FlushE(FlushE_top),
         .Forward_AE(ForwardAE_top),
         .Forward_BE(ForwardBE_top));
 
@@ -300,17 +369,18 @@ module pipeline (
     wire [7:0]  spi2_tx_data_w, spi2_rx_data_w;
     wire        gpio1_wr_en_w, gpio1_wdata_w;
     wire        gpio2_wr_en_w, gpio2_wdata_w;
-    wire        gpio3_wr_en_w, gpio3_wdata_w;    // ← NEW
+    wire        gpio3_wr_en_w, gpio3_wdata_w;
     wire        UART_tx_start_w, UART_tx_busy_w, UART_rx_ready_w;
     wire [7:0]  UART_tx_data_w, UART_rx_data_w;
 
-    // ── Fanout fix: buffer spi_busy + spi_pending ─────────────
-    // spi2_busy_w र spi2_pending_w दुवै gpio2 र gpio3 मा जान्छन्
-    // direct wire गर्दा fanout बढ्छ
-    // registered buffer मार्फत दिइन्छ
-    reg spi2_busy_buf, spi2_pending_buf;
+    // =========================================================
+    //  FIX 3 — SPI BUSY/PENDING FANOUT REDUCTION
+    // =========================================================
+    (* keep = "true" *) reg spi2_busy_buf;
+    (* keep = "true" *) reg spi2_pending_buf;
+
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset_sync) begin
             spi2_busy_buf    <= 1'b0;
             spi2_pending_buf <= 1'b0;
         end else begin
@@ -320,10 +390,11 @@ module pipeline (
     end
 
     // =========================================================
-    // DataMem
+    // DATAMEM
     // =========================================================
     DataMem databus_inst (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .aluAddress_in(ALUResultM_top),
         .DataWriteM_in(WriteDataM_top[7:0]),
         .memwriteM_in(MemWriteM_top),
@@ -343,16 +414,19 @@ module pipeline (
         .gpio1_wdata(gpio1_wdata_w),
         .gpio2_wr_en(gpio2_wr_en_w),
         .gpio2_wdata(gpio2_wdata_w),
-        .gpio3_wr_en(gpio3_wr_en_w),        // ← NEW
-        .gpio3_wdata(gpio3_wdata_w));        // ← NEW
+        .gpio3_wr_en(gpio3_wr_en_w),
+        .gpio3_wdata(gpio3_wdata_w));
 
     // =========================================================
-    // Peripheral UART
+    // PERIPHERAL UART
     // =========================================================
     uart_Tx_fixed0 #(
-        .CLK_FREQ(25_000_000), .BAUD_RATE(115_200), .OVERSAMPLE(16)
+        .CLK_FREQ(25_000_000),
+        .BAUD_RATE(115_200),
+        .OVERSAMPLE(16)
     ) uart_inst0 (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .tx_Start(UART_tx_start_w),
         .tx_Data(UART_tx_data_w),
         .tx(UART_tx),
@@ -362,12 +436,16 @@ module pipeline (
         .rx_ready(UART_rx_ready_w));
 
     // =========================================================
-    // SPI2 master
+    // SPI MASTER
     // =========================================================
     spi_master #(
-        .DATA_WIDTH(8), .CPOL(0), .CPHA(0), .CLK_DIV(3)
+        .DATA_WIDTH(8),
+        .CPOL(0),
+        .CPHA(0),
+        .CLK_DIV(3)
     ) spi2_inst (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .start(spi2_start_w),
         .tx_data(spi2_tx_data_w),
         .rx_data(spi2_rx_data_w),
@@ -382,31 +460,33 @@ module pipeline (
     // =========================================================
     gpio1_io gpio1 (
         .clk(clk),
-        .reset(reset),
+        .reset(reset_sync),
         .wr_en1(gpio1_wr_en_w),
         .wdata1(gpio1_wdata_w),
         .gpio_out1(Gpio1));
 
     // =========================================================
-    // buffered spi signals दिइन्छ — fanout safe
+    // GPIO2 — SPI CS (buffered signals)
     // =========================================================
     gpio2_io gpio2 (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .wr_en2(gpio2_wr_en_w),
         .wdata2(gpio2_wdata_w),
-        .spi_busy(spi2_busy_buf),       // ← buffered
-        .spi_pending(spi2_pending_buf), // ← buffered
+        .spi_busy(spi2_busy_buf),
+        .spi_pending(spi2_pending_buf),
         .gpio_out2(SPI_CS_GPIO2));
 
     // =========================================================
-    // same buffered spi signals
+    // GPIO3 — SPI CS (same buffered signals)
     // =========================================================
     gpio3_io gpio3 (
-        .clk(clk), .reset(reset),
+        .clk(clk),
+        .reset(reset_sync),
         .wr_en3(gpio3_wr_en_w),
         .wdata3(gpio3_wdata_w),
-        .spi_busy(spi2_busy_buf),       // ← buffered
-        .spi_pending(spi2_pending_buf), // ← buffered
+        .spi_busy(spi2_busy_buf),
+        .spi_pending(spi2_pending_buf),
         .gpio_out3(SPI_CS_GPIO3));
 
 endmodule
